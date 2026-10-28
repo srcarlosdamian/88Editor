@@ -3,6 +3,7 @@ import AVFoundation
 import CoreGraphics
 import CoreVideo
 import AppKit
+import CoreText
 import VideoToolbox
 
 // MARK: - Generador de Pista Base / Reloj Maestro de Video
@@ -93,9 +94,9 @@ public final class EditorVideoCompositionInstruction: NSObject, AVVideoCompositi
 
 // MARK: - Compositor de Video Profesional Multicapa
 /// Renderiza todas las capas de la línea de tiempo (Videos, Imágenes, Textos y Formas Vectoriales)
-/// con interpolación precisa de Keyframes (Escala, Rotación, Opacidad, Posición y Recorte).
+/// con orientación derecha vertical (upright), interpolación de Keyframes y recorte (Crop).
 public final class EditorVideoCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
-    private static let imageCache = NSCache<NSURL, NSImage>()
+    private static let cgImageCache = NSCache<NSURL, CGImage>()
 
     public var sourcePixelBufferAttributes: [String : Any]? {
         return [
@@ -152,13 +153,9 @@ public final class EditorVideoCompositor: NSObject, AVVideoCompositing, @uncheck
             return
         }
 
-        let gc = NSGraphicsContext(cgContext: ctx, flipped: true)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = gc
-
-        // 1. Fondo negro base neutro de la composición
-        NSColor.black.setFill()
-        NSRect(x: 0, y: 0, width: targetW, height: targetH).fill()
+        // 1. Fondo base neutro en coordenadas estándar CoreGraphics (y=0 abajo en memoria cartesiana)
+        ctx.setFillColor(red: 0, green: 0, blue: 0, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: targetW, height: targetH))
 
         // 2. Iterar pistas en orden de capas (Pista 0 al fondo, Pista N al frente)
         for track in instruction.tracks {
@@ -185,45 +182,46 @@ public final class EditorVideoCompositor: NSObject, AVVideoCompositing, @uncheck
             )
 
             // Posicionamiento centrado en el visor con offsets de usuario
+            // En SwiftUI, positionY positivo baja. En CoreGraphics cartesiano, bajar es restar.
             let centerX = targetW / 2.0 + CGFloat(clip.positionX)
-            let centerY = targetH / 2.0 + CGFloat(clip.positionY)
+            let centerY = targetH / 2.0 - CGFloat(clip.positionY)
 
             ctx.saveGState()
             ctx.setAlpha(CGFloat(dynamicOpacity))
 
-            // Aplicar transformaciones espaciales: traslación, rotación y escala
+            // Aplicar transformaciones espaciales estándar CoreGraphics
             ctx.translateBy(x: centerX, y: centerY)
-            ctx.rotate(by: CGFloat(dynamicRotation) * .pi / 180.0)
+            // En SwiftUI los grados horarios son positivos. En trigonometría/CoreGraphics son negativos:
+            ctx.rotate(by: -CGFloat(dynamicRotation) * .pi / 180.0)
             ctx.scaleBy(x: CGFloat(dynamicScale), y: CGFloat(dynamicScale))
 
-            let localRect = NSRect(x: -elemW / 2.0, y: -elemH / 2.0, width: elemW, height: elemH)
+            let localRect = CGRect(x: -elemW / 2.0, y: -elemH / 2.0, width: elemW, height: elemH)
 
-            // Recorte espacial (Crop)
+            // Recorte espacial (Crop) en coordenadas cartesianas estándar
             if clip.hasCrop {
                 let cropX = localRect.minX + elemW * CGFloat(clip.cropLeft)
-                let cropY = localRect.minY + elemH * CGFloat(clip.cropTop)
                 let cropW = elemW * max(0.001, 1.0 - CGFloat(clip.cropLeft) - CGFloat(clip.cropRight))
+                let cropY = localRect.minY + elemH * CGFloat(clip.cropBottom)
                 let cropH = elemH * max(0.001, 1.0 - CGFloat(clip.cropTop) - CGFloat(clip.cropBottom))
                 ctx.clip(to: CGRect(x: cropX, y: cropY, width: cropW, height: cropH))
             }
 
             // Dibujar según el tipo de elemento
             if let shape = clip.shapeType {
-                drawVectorShape(shape: shape, fillHex: clip.fillColorHex ?? "#FF3B30", in: localRect)
+                drawVectorShape(ctx: ctx, shape: shape, fillHex: clip.fillColorHex ?? "#FF3B30", in: localRect)
             } else if let text = clip.textOverlay, !text.isEmpty {
-                drawTextOverlay(clip: clip, text: text, in: localRect)
+                drawTextOverlay(ctx: ctx, clip: clip, text: text, in: localRect)
             } else if let asset = instruction.assets[clip.assetId] {
                 if asset.mediaType == .image {
-                    if let img = Self.loadImage(from: asset.fileURL) {
-                        img.draw(in: localRect)
+                    if let img = Self.loadCGImage(from: asset.fileURL) {
+                        ctx.draw(img, in: localRect)
                     }
                 } else if asset.mediaType == .video {
                     if let compTrackID = instruction.trackToCompID[track.id],
                        let sourceBuffer = asyncVideoCompositionRequest.sourceFrame(byTrackID: compTrackID) {
                         var videoCG: CGImage?
                         if VTCreateCGImageFromCVPixelBuffer(sourceBuffer, options: nil, imageOut: &videoCG) == 0, let vCG = videoCG {
-                            let nsVideoImg = NSImage(cgImage: vCG, size: localRect.size)
-                            nsVideoImg.draw(in: localRect)
+                            ctx.draw(vCG, in: localRect)
                         }
                     }
                 }
@@ -232,7 +230,6 @@ public final class EditorVideoCompositor: NSObject, AVVideoCompositing, @uncheck
             ctx.restoreGState()
         }
 
-        NSGraphicsContext.restoreGraphicsState()
         asyncVideoCompositionRequest.finish(withComposedVideoFrame: outputBuffer)
     }
 
@@ -250,10 +247,16 @@ public final class EditorVideoCompositor: NSObject, AVVideoCompositing, @uncheck
 
         if let text = clip.textOverlay, !text.isEmpty {
             let fSize = CGFloat(clip.fontSize ?? 54.0)
-            let font = resolveFont(name: clip.fontName, size: fSize)
-            let size = (text as NSString).size(withAttributes: [.font: font])
-            let w = max(160, size.width + 40)
-            let h = max(60, size.height + 24)
+            let font = resolveCTFont(name: clip.fontName, size: fSize)
+            let attrStr = CFAttributedStringCreate(
+                nil,
+                text as CFString,
+                [kCTFontAttributeName: font] as CFDictionary
+            )!
+            let line = CTLineCreateWithAttributedString(attrStr)
+            let bounds = CTLineGetBoundsWithOptions(line, [])
+            let w = max(160, bounds.width + 40)
+            let h = max(60, bounds.height + 24)
             return (min(targetW, w), h)
         }
 
@@ -261,9 +264,9 @@ public final class EditorVideoCompositor: NSObject, AVVideoCompositing, @uncheck
             var w = asset.width
             var h = asset.height
             if w <= 0 || h <= 0 {
-                if asset.mediaType == .image, let img = Self.loadImage(from: asset.fileURL) {
-                    w = Double(img.size.width)
-                    h = Double(img.size.height)
+                if asset.mediaType == .image, let img = Self.loadCGImage(from: asset.fileURL) {
+                    w = Double(img.width)
+                    h = Double(img.height)
                 }
             }
             if w > 0 && h > 0 {
@@ -277,126 +280,117 @@ public final class EditorVideoCompositor: NSObject, AVVideoCompositing, @uncheck
         return (targetW, targetH)
     }
 
-    // MARK: - Dibujo de Formas Vectoriales
-    private func drawVectorShape(shape: String, fillHex: String, in rect: NSRect) {
-        let fill = NSColor(hex: fillHex)
-        fill.setFill()
+    // MARK: - Dibujo de Formas Vectoriales en CoreGraphics Estándar
+    private func drawVectorShape(ctx: CGContext, shape: String, fillHex: String, in rect: CGRect) {
+        let (r, g, b, a) = parseHexColor(fillHex)
+        ctx.setFillColor(red: r, green: g, blue: b, alpha: a)
 
         switch shape.lowercased() {
         case "circle":
-            NSBezierPath(ovalIn: rect).fill()
+            ctx.fillEllipse(in: rect)
         case "star":
-            let path = createStarPath(in: rect, points: 5)
-            path.fill()
-        case "triangle":
-            let path = createTrianglePath(in: rect)
-            path.fill()
-        default:
-            NSBezierPath(rect: rect).fill()
-        }
-    }
+            let path = CGMutablePath()
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            let outerRadius = min(rect.width, rect.height) / 2.0
+            let innerRadius = outerRadius * 0.45
+            let points = 5
+            let angleStep = .pi / CGFloat(points)
+            var currentAngle: CGFloat = .pi / 2.0 // Punta superior en cartesiano
 
-    private func createStarPath(in rect: NSRect, points: Int) -> NSBezierPath {
-        let path = NSBezierPath()
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let outerRadius = min(rect.width, rect.height) / 2.0
-        let innerRadius = outerRadius * 0.45
-        let angleStep = .pi / CGFloat(points)
-        var currentAngle: CGFloat = -.pi / 2.0
-
-        for i in 0..<(points * 2) {
-            let radius = i.isMultiple(of: 2) ? outerRadius : innerRadius
-            let x = center.x + radius * cos(currentAngle)
-            let y = center.y + radius * sin(currentAngle)
-            if i == 0 {
-                path.move(to: CGPoint(x: x, y: y))
-            } else {
-                path.line(to: CGPoint(x: x, y: y))
+            for i in 0..<(points * 2) {
+                let radius = i.isMultiple(of: 2) ? outerRadius : innerRadius
+                let x = center.x + radius * cos(currentAngle)
+                let y = center.y + radius * sin(currentAngle)
+                if i == 0 {
+                    path.move(to: CGPoint(x: x, y: y))
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+                currentAngle += angleStep
             }
-            currentAngle += angleStep
+            path.closeSubpath()
+            ctx.addPath(path)
+            ctx.fillPath()
+        case "triangle":
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: rect.midX, y: rect.maxY)) // Vértice superior
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY)) // Esquina inferior derecha
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY)) // Esquina inferior izquierda
+            path.closeSubpath()
+            ctx.addPath(path)
+            ctx.fillPath()
+        default:
+            ctx.fill(rect)
         }
-        path.close()
-        return path
     }
 
-    private func createTrianglePath(in rect: NSRect) -> NSBezierPath {
-        let path = NSBezierPath()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.line(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.line(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.close()
-        return path
-    }
-
-    // MARK: - Dibujo de Textos
-    private func drawTextOverlay(clip: TimelineClip, text: String, in rect: NSRect) {
-        let textColor = NSColor(hex: clip.textColorHex ?? "#FFFFFF")
+    // MARK: - Dibujo de Textos con CoreText (Sin inversión vertical)
+    private func drawTextOverlay(ctx: CGContext, clip: TimelineClip, text: String, in rect: CGRect) {
         let fSize = CGFloat(clip.fontSize ?? 54.0)
-        let font = resolveFont(name: clip.fontName, size: fSize)
+        let font = resolveCTFont(name: clip.fontName, size: fSize)
+        let (r, g, b, a) = parseHexColor(clip.textColorHex ?? "#FFFFFF")
+        let textColor = CGColor(srgbRed: r, green: g, blue: b, alpha: a)
 
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
+        let attrStr = CFAttributedStringCreate(
+            nil,
+            text as CFString,
+            [
+                kCTFontAttributeName: font,
+                kCTForegroundColorAttributeName: textColor
+            ] as CFDictionary
+        )!
 
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.65)
-        shadow.shadowOffset = NSSize(width: 0, height: -2)
-        shadow.shadowBlurRadius = 4
+        let line = CTLineCreateWithAttributedString(attrStr)
+        let bounds = CTLineGetBoundsWithOptions(line, [])
 
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: textColor,
-            .paragraphStyle: paragraphStyle,
-            .shadow: shadow
-        ]
+        // Centrar texto dentro del rectángulo
+        let posX = rect.midX - bounds.width / 2.0
+        let posY = rect.midY - bounds.height / 2.0
 
-        (text as NSString).draw(in: rect, withAttributes: attrs)
+        ctx.textPosition = CGPoint(x: posX, y: posY)
+        CTLineDraw(line, ctx)
     }
 
-    private func resolveFont(name: String?, size: CGFloat) -> NSFont {
-        if let name = name, let font = NSFont(name: name, size: size) {
-            return font
+    private func resolveCTFont(name: String?, size: CGFloat) -> CTFont {
+        if let name = name, !name.isEmpty {
+            return CTFontCreateWithName(name as CFString, size, nil)
         }
-        return NSFont.boldSystemFont(ofSize: size)
+        return CTFontCreateWithName("Helvetica-Bold" as CFString, size, nil)
     }
 
-    // MARK: - Caché de Imágenes
-    private static func loadImage(from url: URL) -> NSImage? {
+    // MARK: - Caché y Carga de CGImage
+    private static func loadCGImage(from url: URL) -> CGImage? {
         let nsURL = url as NSURL
-        if let cached = imageCache.object(forKey: nsURL) {
+        if let cached = cgImageCache.object(forKey: nsURL) {
             return cached
         }
-        if let img = NSImage(contentsOf: url) {
-            imageCache.setObject(img, forKey: nsURL)
-            return img
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+            return nil
         }
-        return nil
+        cgImageCache.setObject(cgImage, forKey: nsURL)
+        return cgImage
     }
-}
 
-// MARK: - Extensión de NSColor para soporte Hexadecimal en AppKit
-extension NSColor {
-    convenience init(hex: String) {
+    private func parseHexColor(_ hex: String) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
         var clean = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         if clean.hasPrefix("#") { clean.removeFirst() }
 
         var rgb: UInt64 = 0
         Scanner(string: clean).scanHexInt64(&rgb)
 
-        let r, g, b, a: CGFloat
         if clean.count == 6 {
-            r = CGFloat((rgb >> 16) & 0xFF) / 255.0
-            g = CGFloat((rgb >> 8) & 0xFF) / 255.0
-            b = CGFloat(rgb & 0xFF) / 255.0
-            a = 1.0
+            let r = CGFloat((rgb >> 16) & 0xFF) / 255.0
+            let g = CGFloat((rgb >> 8) & 0xFF) / 255.0
+            let b = CGFloat(rgb & 0xFF) / 255.0
+            return (r, g, b, 1.0)
         } else if clean.count == 8 {
-            r = CGFloat((rgb >> 24) & 0xFF) / 255.0
-            g = CGFloat((rgb >> 16) & 0xFF) / 255.0
-            b = CGFloat((rgb >> 8) & 0xFF) / 255.0
-            a = CGFloat(rgb & 0xFF) / 255.0
-        } else {
-            r = 1.0; g = 1.0; b = 1.0; a = 1.0
+            let r = CGFloat((rgb >> 24) & 0xFF) / 255.0
+            let g = CGFloat((rgb >> 16) & 0xFF) / 255.0
+            let b = CGFloat((rgb >> 8) & 0xFF) / 255.0
+            let a = CGFloat(rgb & 0xFF) / 255.0
+            return (r, g, b, a)
         }
-
-        self.init(srgbRed: r, green: g, blue: b, alpha: a)
+        return (1.0, 1.0, 1.0, 1.0)
     }
 }

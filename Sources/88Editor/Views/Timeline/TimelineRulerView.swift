@@ -86,39 +86,38 @@ public struct TimelineRulerView: View {
                     .allowsHitTesting(false)
                 }
 
-                // 3. Franja sombreada del Área de Trabajo (Arrastrable para mover el bloque completo)
+                // 3. Franja visual del Área de Trabajo (NO bloquea el avance del timeline; permite avanzar libremente)
                 if outX > inX {
                     ZStack(alignment: .top) {
                         Rectangle()
-                            .fill(Color.white.opacity(0.14))
+                            .fill(Color.white.opacity(0.08))
                             .frame(width: barWidth, height: 26)
 
                         // Barra superior horizontal que une los corchetes
                         Rectangle()
-                            .fill(Color.white.opacity(0.90))
-                            .frame(width: barWidth, height: 3.5)
+                            .fill(Color.white.opacity(0.85))
+                            .frame(width: barWidth, height: 3.0)
                     }
                     .position(x: inX + barWidth / 2, y: 13)
-                    .contentShape(Rectangle())
-                    .help("Arrastrar para desplazar el rango completo In-Out")
-                    .gesture(
-                        DragGesture()
-                            .onChanged { val in
-                                let delta = Double(val.translation.width) / zoom
-                                onShiftWorkArea?(delta)
-                            }
-                    )
+                    .allowsHitTesting(false) // Permite hacer clic o arrastrar en cualquier parte de la regla para avanzar
                 }
 
-                // 4. Corchete Izquierdo (Punto In `[`) - Movible libremente con el mouse
+                // 4. Extremo Izquierdo: Corchete de Entrada (Punto In `[`)
                 WorkAreaBracketShape(isLeft: true)
                     .fill(Color.white)
                     .frame(width: 9, height: 18)
                     .position(x: inX + 4.5, y: 13)
                     .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
-                    .contentShape(Rectangle().inset(by: -6))
-                    .help("Punto In: Arrastrar para ajustar inicio del corte")
+                    .contentShape(Rectangle().inset(by: -4))
+                    .help("Extremo In: Arrastrar para ajustar punto de entrada")
                     .zIndex(10)
+                    .onHover { hovering in
+                        if hovering {
+                            NSCursor.resizeLeftRight.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
                     .gesture(
                         DragGesture()
                             .onChanged { val in
@@ -127,15 +126,22 @@ public struct TimelineRulerView: View {
                             }
                     )
 
-                // 5. Corchete Derecho (Punto Out `]`) - Movible libremente con el mouse
+                // 5. Extremo Derecho: Corchete de Salida (Punto Out `]`)
                 WorkAreaBracketShape(isLeft: false)
                     .fill(Color.white)
                     .frame(width: 9, height: 18)
                     .position(x: outX - 4.5, y: 13)
                     .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
-                    .contentShape(Rectangle().inset(by: -6))
-                    .help("Punto Out: Arrastrar para ajustar final del corte")
+                    .contentShape(Rectangle().inset(by: -4))
+                    .help("Extremo Out: Arrastrar para ajustar punto de salida")
                     .zIndex(10)
+                    .onHover { hovering in
+                        if hovering {
+                            NSCursor.resizeLeftRight.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
                     .gesture(
                         DragGesture()
                             .onChanged { val in

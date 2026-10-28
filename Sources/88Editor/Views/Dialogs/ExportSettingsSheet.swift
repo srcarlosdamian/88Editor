@@ -1,38 +1,16 @@
 import SwiftUI
 import AVFoundation
 
-/// Modal Profesional de Exportación y Renderizado con Previsualización en Vivo, Reproductor Integrado y Pestañas de Formato y Tamaño
+/// Modal Profesional de Exportación y Renderizado con Previsualización en Vivo, Reproductor Integrado y Resolución Fija del Proyecto
 public struct ExportSettingsSheet: View {
     @ObservedObject var viewModel: EditorViewModel
     @Environment(\.dismiss) private var dismiss
-
-    // Pestaña activa (Formato vs Tamaño)
-    @State private var activeTab: ExportTab = .format
-
-    public enum ExportTab: String, CaseIterable, Identifiable {
-        case format = "Formato y Rango"
-        case size = "Tamaño y Resolución"
-
-        public var id: String { rawValue }
-        public var icon: String {
-            switch self {
-            case .format: return "slider.horizontal.3"
-            case .size: return "aspectratio"
-            }
-        }
-    }
 
     // Configuración de formato
     @State private var mediaType: ExportMediaType = .videoAndAudio
     @State private var container: ExportContainer = .mp4
     @State private var quality: ExportQuality = .high
     @State private var exportRange: ExportRangeOption = .workAreaIfActive
-
-    // Configuración de tamaño / resolución
-    @State private var selectedResolutionOption: Int = 0 // 0 = 1080p, 1 = 4K, 2 = 720p, 3 = 9:16, 4 = 1:1, 5 = Personalizado
-    @State private var customWidth: Double = 1920
-    @State private var customHeight: Double = 1080
-    @State private var selectedFramerate: FramerateOption = .fps30
 
     // Estado del reproductor de previsualización
     @State private var previewTime: Double = 0.0
@@ -55,21 +33,11 @@ public struct ExportSettingsSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Exportar y Renderizar")
                         .font(.system(size: 14, weight: .bold))
-                    Text(viewModel.project.projectName)
+                    let config = viewModel.project.configuration
+                    Text("\(viewModel.project.projectName) • \(Int(config.width))×\(Int(config.height)) • \(config.framerate.shortName)")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
-
-                Spacer()
-
-                // Selector de pestañas central
-                Picker("", selection: $activeTab) {
-                    ForEach(ExportTab.allCases) { tab in
-                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 290)
 
                 Spacer()
 
@@ -200,15 +168,11 @@ public struct ExportSettingsSheet: View {
                     .fill(DesignSystem.border)
                     .frame(width: 1)
 
-                // COLUMNA DERECHA: Pestañas de Configuración
+                // COLUMNA DERECHA: Ajustes de Exportación
                 VStack(spacing: 0) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 18) {
-                            if activeTab == .format {
-                                formatSettingsView()
-                            } else {
-                                sizeAndResolutionSettingsView()
-                            }
+                            formatSettingsView()
                         }
                         .padding(20)
                     }
@@ -248,14 +212,13 @@ public struct ExportSettingsSheet: View {
             if viewModel.project.hasCustomWorkArea {
                 exportRange = .workAreaIfActive
             }
-            syncResolutionToProject()
         }
         .onDisappear {
             stopPreview()
         }
     }
 
-    // MARK: - Pestaña 1: Formato y Calidad
+    // MARK: - Panel de Configuración de Formato y Resolución
     @ViewBuilder
     private func formatSettingsView() -> some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -339,7 +302,37 @@ public struct ExportSettingsSheet: View {
                 }
             }
 
-            // 5. Estimación de peso del archivo resultante
+            // 5. Resolución y FPS Nativos del Proyecto (Fijo y por defecto)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("RESOLUCIÓN Y TASA DE CUADROS (ORIGINAL DEL PROYECTO)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary)
+
+                let config = viewModel.project.configuration
+                HStack(spacing: 12) {
+                    Image(systemName: "aspectratio")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(Int(config.width)) × \(Int(config.height)) (\(config.preset.rawValue))")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.primary)
+
+                        Text("\(config.framerate.displayName) • Para modificar tamaño edita Ajustes del Proyecto")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(6)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignSystem.border, lineWidth: 1))
+            }
+
+            // 6. Estimación de peso del archivo resultante
             HStack(spacing: 12) {
                 Image(systemName: "internaldrive")
                     .font(.system(size: 20))
@@ -358,112 +351,11 @@ public struct ExportSettingsSheet: View {
 
                 Spacer()
             }
-            .padding(12)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(DesignSystem.border, lineWidth: 1))
-        }
-    }
-
-    // MARK: - Pestaña 2: Tamaño y Resolución
-    @ViewBuilder
-    private func sizeAndResolutionSettingsView() -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("RESOLUCIÓN DE SALIDA")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.secondary)
-
-            // Selector de resoluciones comunes
-            VStack(spacing: 8) {
-                resolutionRow(title: "1080p Full HD", resolution: "1920 × 1080 (16:9)", index: 0, w: 1920, h: 1080)
-                resolutionRow(title: "4K Ultra HD", resolution: "3840 × 2160 (16:9)", index: 1, w: 3840, h: 2160)
-                resolutionRow(title: "720p HD", resolution: "1280 × 720 (16:9)", index: 2, w: 1280, h: 720)
-                resolutionRow(title: "Vertical / Reels / TikTok", resolution: "1080 × 1920 (9:16)", index: 3, w: 1080, h: 1920)
-                resolutionRow(title: "Cuadrado", resolution: "1080 × 1080 (1:1)", index: 4, w: 1080, h: 1080)
-                resolutionRow(title: "Personalizada", resolution: "\(Int(customWidth)) × \(Int(customHeight))", index: 5, w: customWidth, h: customHeight)
-            }
-
-            // Campos numéricos si es personalizada
-            if selectedResolutionOption == 5 {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Ancho (px)")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        TextField("Ancho", value: $customWidth, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                    }
-
-                    Text("×")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.secondary)
-                        .padding(.top, 16)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Alto (px)")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        TextField("Alto", value: $customHeight, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-                .padding(.top, 4)
-            }
-
-            Divider().foregroundColor(DesignSystem.border)
-
-            // Tasa de cuadros (FPS)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("TASA DE CUADROS (FRAMERATE)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.secondary)
-
-                Picker("", selection: $selectedFramerate) {
-                    ForEach(FramerateOption.allCases) { fps in
-                        Text(fps.displayName).tag(fps)
-                    }
-                }
-                .labelsHidden()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func resolutionRow(title: String, resolution: String, index: Int, w: Double, h: Double) -> some View {
-        let isSelected = (selectedResolutionOption == index)
-        Button {
-            selectedResolutionOption = index
-            if index != 5 {
-                customWidth = w
-                customHeight = h
-            }
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.primary)
-                    Text(resolution)
-                        .font(DesignSystem.monoFont)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.primary)
-                        .font(.system(size: 14))
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(10)
             .background(Color(NSColor.controlBackgroundColor))
             .cornerRadius(6)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isSelected ? Color.white.opacity(0.85) : DesignSystem.border, lineWidth: isSelected ? 1.5 : 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(DesignSystem.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Previsualización de Capas
@@ -523,20 +415,6 @@ public struct ExportSettingsSheet: View {
             let h = w / CGFloat(aspect)
             return (w, h)
         }
-    }
-
-    private func syncResolutionToProject() {
-        let config = viewModel.project.configuration
-        customWidth = config.width
-        customHeight = config.height
-        selectedFramerate = config.framerate
-
-        if config.width == 1920 && config.height == 1080 { selectedResolutionOption = 0 }
-        else if config.width == 3840 && config.height == 2160 { selectedResolutionOption = 1 }
-        else if config.width == 1280 && config.height == 720 { selectedResolutionOption = 2 }
-        else if config.width == 1080 && config.height == 1920 { selectedResolutionOption = 3 }
-        else if config.width == 1080 && config.height == 1080 { selectedResolutionOption = 4 }
-        else { selectedResolutionOption = 5 }
     }
 
     private func calculateActiveRange() -> (Double, Double, Double) {
@@ -607,19 +485,13 @@ public struct ExportSettingsSheet: View {
 
         if panel.runModal() == .OK, let outputURL = panel.url {
             let useWorkArea = (exportRange == .workAreaIfActive)
-            let exportConfig = ProjectConfiguration(
-                preset: .custom,
-                customWidth: customWidth,
-                customHeight: customHeight,
-                framerate: selectedFramerate
-            )
             viewModel.startConfiguredExport(
                 to: outputURL,
                 container: container,
                 quality: quality,
                 mediaType: mediaType,
                 useWorkArea: useWorkArea,
-                customConfiguration: exportConfig
+                customConfiguration: viewModel.project.configuration
             )
         }
     }
