@@ -10,6 +10,8 @@ public struct ProjectDocument: Identifiable, Codable, Equatable {
     public var configuration: ProjectConfiguration
     public var assets: [MediaAsset]
     public var tracks: [TimelineTrack]
+    public var savedHistory: [HistoryState]?
+    public var savedHistoryIndex: Int?
 
     public init(
         id: UUID = UUID(),
@@ -19,7 +21,9 @@ public struct ProjectDocument: Identifiable, Codable, Equatable {
         modifiedAt: Date = Date(),
         configuration: ProjectConfiguration = ProjectConfiguration(),
         assets: [MediaAsset] = [],
-        tracks: [TimelineTrack] = []
+        tracks: [TimelineTrack] = [],
+        savedHistory: [HistoryState]? = nil,
+        savedHistoryIndex: Int? = nil
     ) {
         self.id = id
         self.version = version
@@ -29,6 +33,8 @@ public struct ProjectDocument: Identifiable, Codable, Equatable {
         self.configuration = configuration
         self.assets = assets
         self.tracks = tracks
+        self.savedHistory = savedHistory
+        self.savedHistoryIndex = savedHistoryIndex
     }
 
     /// Duración total del proyecto calculada a partir del clip más lejano

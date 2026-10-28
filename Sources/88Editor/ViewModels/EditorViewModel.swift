@@ -83,11 +83,17 @@ public final class EditorViewModel: ObservableObject {
     @Published public var historyStates: [HistoryState] = []
     @Published public var currentHistoryIndex: Int = 0
     private var isRestoringHistoryState: Bool = false
-    private let maxHistoryStates: Int = 60
+    public static let maxHistoryStates: Int = 35 // Límite estándar NLE: 35 estados ligeros (~50KB)
+    private var maxHistoryStates: Int { Self.maxHistoryStates }
 
     // Magnetismo (Snapping) inteligente entre capas y cabezal
     @Published public var isSnappingEnabled: Bool = true
     @Published public var snapGuideLineTime: Double? = nil
+
+    // Autoguardado inteligente
+    @Published public var autosaveStatusMessage: String = "Guardado"
+    private var autosaveTimer: Timer?
+    public private(set) var lastSavedTimestamp: Date = Date()
 
     // Fuentes del sistema cargadas mediante NSFontManager
     @Published public var availableSystemFonts: [String] = []
@@ -104,6 +110,7 @@ public final class EditorViewModel: ObservableObject {
         self.project = ProjectDocument(configuration: initialConfiguration)
         loadSystemFonts()
         setupEngineObservers()
+        startAutosaveTimer()
         rebuildComposition()
         recordHistory(title: "Estado inicial", icon: "arrow.counterclockwise")
     }
@@ -120,14 +127,12 @@ public final class EditorViewModel: ObservableObject {
 
     public func player(for clip: TimelineClip, asset: MediaAsset) -> AVPlayer {
         if let existing = clipPlayers[clip.id] {
-            syncClipPlayer(existing, clip: clip)
             return existing
         }
         let p = AVPlayer(url: asset.fileURL)
         p.isMuted = true
         p.actionAtItemEnd = .none
         clipPlayers[clip.id] = p
-        syncClipPlayer(p, clip: clip)
         return p
     }
 
@@ -1050,7 +1055,7 @@ public final class EditorViewModel: ObservableObject {
             title: title,
             icon: icon,
             timestamp: Date(),
-            snapshot: self.project,
+            document: self.project,
             selectedClipId: self.selectedClipId,
             playheadTime: self.playbackEngine.currentTime
         )
@@ -1063,6 +1068,7 @@ public final class EditorViewModel: ObservableObject {
 
         currentHistoryIndex = historyStates.count - 1
         hasUnsavedChanges = true
+        autosaveStatusMessage = "Cambios sin guardar"
     }
 
     public func jumpToHistoryState(at index: Int) {
@@ -1071,11 +1077,12 @@ public final class EditorViewModel: ObservableObject {
         defer { isRestoringHistoryState = false }
 
         let state = historyStates[index]
-        self.project = state.snapshot
+        self.project.tracks = state.tracks
+        self.project.configuration = state.configuration
         self.selectedClipId = state.selectedClipId
         self.playbackEngine.seek(to: state.playheadTime)
         self.currentHistoryIndex = index
-        self.rebuildComposition()
+        self.debouncedRebuildComposition()
         self.objectWillChange.send()
     }
 
@@ -1096,7 +1103,8 @@ public final class EditorViewModel: ObservableObject {
             title: "Estado base",
             icon: "arrow.counterclockwise",
             timestamp: Date(),
-            snapshot: current.snapshot,
+            tracks: current.tracks,
+            configuration: current.configuration,
             selectedClipId: current.selectedClipId,
             playheadTime: current.playheadTime
         )
@@ -1216,7 +1224,60 @@ public final class EditorViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Guardado y Carga de Proyecto (.88proj)
+    // MARK: - Guardado, Autoguardado e Historial Persistente (.88proj)
+    private var autosaveDirectoryURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("88Editor", isDirectory: true).appendingPathComponent("Autosave", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private var autosaveBackupURL: URL {
+        let safeName = project.projectName.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "proyecto"
+        return autosaveDirectoryURL.appendingPathComponent("autosave_\(safeName).88proj")
+    }
+
+    public func startAutosaveTimer() {
+        autosaveTimer?.invalidate()
+        // Ejecución periódica cada 30 segundos
+        autosaveTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.performPeriodicAutosave()
+            }
+        }
+    }
+
+    public func performPeriodicAutosave() {
+        guard hasUnsavedChanges, !playbackEngine.isScrubbing else { return }
+
+        do {
+            var autosaveDoc = self.project
+            autosaveDoc.modifiedAt = Date()
+            autosaveDoc.savedHistory = Array(historyStates.suffix(maxHistoryStates))
+            autosaveDoc.savedHistoryIndex = currentHistoryIndex
+            let data = try autosaveDoc.serialize()
+
+            // 1. Si el usuario ya asignó una ruta de archivo (.88proj), autoguardar directamente
+            if let dest = currentProjectURL {
+                try data.write(to: dest, options: .atomic)
+                self.hasUnsavedChanges = false
+                self.lastSavedTimestamp = Date()
+                self.autosaveStatusMessage = "Autoguardado"
+                print("[88 Editor] Autoguardado periódico completado en \(dest.lastPathComponent)")
+            } else {
+                // 2. Si es un proyecto nuevo sin guardar, respaldar en Autosave Directory
+                let backupURL = self.autosaveBackupURL
+                try data.write(to: backupURL, options: .atomic)
+                self.lastSavedTimestamp = Date()
+                self.autosaveStatusMessage = "Copia temporal guardada"
+                print("[88 Editor] Copia de seguridad temporal autoguardada en \(backupURL.path)")
+            }
+            objectWillChange.send()
+        } catch {
+            print("[88 Editor] Error en autoguardado: \(error.localizedDescription)")
+        }
+    }
+
     public func saveProject(to url: URL? = nil) {
         let destinationURL = url ?? currentProjectURL
         guard let finalURL = destinationURL else {
@@ -1226,11 +1287,17 @@ public final class EditorViewModel: ObservableObject {
 
         do {
             project.modifiedAt = Date()
+            // El historial se guarda junto al documento respetando el límite estándar (35 estados ligeros ~50KB)
+            project.savedHistory = Array(historyStates.suffix(maxHistoryStates))
+            project.savedHistoryIndex = currentHistoryIndex
             let data = try project.serialize()
             try data.write(to: finalURL, options: .atomic)
             currentProjectURL = finalURL
             hasUnsavedChanges = false
-            print("[88 Editor] Proyecto guardado exitosamente en \(finalURL.path)")
+            lastSavedTimestamp = Date()
+            autosaveStatusMessage = "Guardado"
+            print("[88 Editor] Proyecto e historial guardados exitosamente en \(finalURL.path)")
+            objectWillChange.send()
         } catch {
             print("[88 Editor] Error al guardar proyecto: \(error.localizedDescription)")
         }
@@ -1267,8 +1334,21 @@ public final class EditorViewModel: ObservableObject {
             self.currentProjectURL = url
             self.hasUnsavedChanges = false
             self.selectedClipId = nil
+            self.lastSavedTimestamp = Date()
+            self.autosaveStatusMessage = "Guardado"
+
+            // Restaurar historial de acciones previo si existe
+            if let saved = loadedProject.savedHistory, !saved.isEmpty {
+                self.historyStates = saved
+                self.currentHistoryIndex = min(max(0, loadedProject.savedHistoryIndex ?? (saved.count - 1)), saved.count - 1)
+            } else {
+                self.historyStates = []
+                self.recordHistory(title: "Proyecto cargado", icon: "folder")
+            }
+
             self.rebuildComposition()
             self.playbackEngine.seek(to: 0.0)
+            objectWillChange.send()
         } catch {
             print("[88 Editor] Error cargando proyecto desde \(url.path): \(error)")
         }

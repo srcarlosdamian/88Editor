@@ -42,8 +42,29 @@ public final class KeyboardManager: ObservableObject {
                 return nil
             }
 
-            // 2. ESCAPE (keyCode 53): Liberar foco de texto o deseleccionar clip
+            // 2. ESCAPE (keyCode 53): Cerrar modales activos, liberar foco de texto o deseleccionar
             if keyCode == 53 {
+                // A) Si hay algún modal/hoja activa, cancelarla y cerrarla inmediatamente
+                if viewModel.isProjectSettingsSheetPresented {
+                    viewModel.isProjectSettingsSheetPresented = false
+                    return nil
+                }
+                if viewModel.isInsertSheetPresented {
+                    viewModel.isInsertSheetPresented = false
+                    return nil
+                }
+                if viewModel.isFontPickerPresented {
+                    viewModel.isFontPickerPresented = false
+                    return nil
+                }
+                if viewModel.isExportSheetPresented {
+                    viewModel.cancelExport()
+                    return nil
+                }
+                if viewModel.isNewProjectSheetPresented {
+                    viewModel.isNewProjectSheetPresented = false
+                    return nil
+                }
                 if self.isUserEditingText() {
                     NSApp.keyWindow?.makeFirstResponder(nil)
                     return nil
@@ -52,6 +73,11 @@ public final class KeyboardManager: ObservableObject {
                     viewModel.selectedClipId = nil
                     return nil
                 }
+                if viewModel.selectedTrackId != nil {
+                    viewModel.selectedTrackId = nil
+                    return nil
+                }
+                return nil
             }
 
             // 3. TECLA DELETE / RETROCESO (keyCode 51 = Backspace, keyCode 117 = Forward Delete)
@@ -225,17 +251,18 @@ public final class KeyboardManager: ObservableObject {
             }
 
             // 15. ATAJOS DE APLICACIÓN CON COMMAND
-            if flags == .command {
+            if flags.contains(.command) {
+                // Cmd + Shift + S: Guardar como...
+                if flags.contains(.shift) && chars == "s" {
+                    viewModel.promptSavePanel()
+                    return nil
+                }
+                // Cmd + Shift + Z: Rehacer
+                if flags.contains(.shift) && chars == "z" {
+                    viewModel.redo()
+                    return nil
+                }
                 switch chars {
-                case "1":
-                    toggleLeftSidebar()
-                    return nil
-                case "2":
-                    toggleRightSidebar()
-                    return nil
-                case "i":
-                    viewModel.promptImportMediaPanel()
-                    return nil
                 case "s":
                     viewModel.saveProject()
                     return nil
@@ -244,6 +271,21 @@ public final class KeyboardManager: ObservableObject {
                     return nil
                 case "n":
                     viewModel.isNewProjectSheetPresented = true
+                    return nil
+                case "e":
+                    viewModel.promptExportRenderPanel()
+                    return nil
+                case "i":
+                    viewModel.promptImportMediaPanel()
+                    return nil
+                case ",":
+                    viewModel.isProjectSettingsSheetPresented = true
+                    return nil
+                case "1":
+                    toggleLeftSidebar()
+                    return nil
+                case "2":
+                    toggleRightSidebar()
                     return nil
                 default:
                     break

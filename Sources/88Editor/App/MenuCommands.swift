@@ -5,11 +5,59 @@ public struct EditorMenuCommands: Commands {
     public init() {}
 
     public var body: some Commands {
-        CommandGroup(after: .newItem) {
+        CommandGroup(replacing: .newItem) {
+            Button("Nuevo Proyecto...") {
+                NotificationCenter.default.post(name: .promptNewProject, object: nil)
+            }
+            .keyboardShortcut("n", modifiers: [.command])
+
+            Button("Abrir Proyecto...") {
+                NotificationCenter.default.post(name: .promptOpenProject, object: nil)
+            }
+            .keyboardShortcut("o", modifiers: [.command])
+
+            Divider()
+
+            Button("Guardar Proyecto") {
+                NotificationCenter.default.post(name: .promptSaveProject, object: nil)
+            }
+            .keyboardShortcut("s", modifiers: [.command])
+
+            Button("Guardar Proyecto Como...") {
+                NotificationCenter.default.post(name: .promptSaveProjectAs, object: nil)
+            }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
+
+            Divider()
+
             Button("Importar Medios...") {
                 NotificationCenter.default.post(name: .promptImportMedia, object: nil)
             }
             .keyboardShortcut("i", modifiers: [.command])
+
+            Button("Exportar y Renderizar Video...") {
+                NotificationCenter.default.post(name: .promptExportRender, object: nil)
+            }
+            .keyboardShortcut("e", modifiers: [.command])
+        }
+
+        CommandGroup(after: .appSettings) {
+            Button("Ajustes del Proyecto...") {
+                NotificationCenter.default.post(name: .promptProjectSettings, object: nil)
+            }
+            .keyboardShortcut(",", modifiers: [.command])
+        }
+
+        CommandGroup(replacing: .undoRedo) {
+            Button("Deshacer") {
+                NotificationCenter.default.post(name: .undoAction, object: nil)
+            }
+            .keyboardShortcut("z", modifiers: [.command])
+
+            Button("Rehacer") {
+                NotificationCenter.default.post(name: .redoAction, object: nil)
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
         }
 
         CommandMenu("Edición de Video") {
@@ -29,7 +77,15 @@ public struct EditorMenuCommands: Commands {
 }
 
 public extension Notification.Name {
+    static let promptNewProject = Notification.Name("88Editor.promptNewProject")
+    static let promptOpenProject = Notification.Name("88Editor.promptOpenProject")
+    static let promptSaveProject = Notification.Name("88Editor.promptSaveProject")
+    static let promptSaveProjectAs = Notification.Name("88Editor.promptSaveProjectAs")
     static let promptImportMedia = Notification.Name("88Editor.promptImportMedia")
+    static let promptExportRender = Notification.Name("88Editor.promptExportRender")
+    static let promptProjectSettings = Notification.Name("88Editor.promptProjectSettings")
     static let splitClipAtPlayhead = Notification.Name("88Editor.splitClipAtPlayhead")
     static let togglePlayback = Notification.Name("88Editor.togglePlayback")
+    static let undoAction = Notification.Name("88Editor.undoAction")
+    static let redoAction = Notification.Name("88Editor.redoAction")
 }

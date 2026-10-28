@@ -138,13 +138,23 @@ public struct CanvasView: View {
                 )
 
                 ZStack {
-                    // Fondo de área de trabajo neutral
+                    // Fondo de área de trabajo neutral: clic deselecciona cualquier objeto activo
                     Color(NSColor.underPageBackgroundColor)
                         .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            viewModel.selectedClipId = nil
+                            viewModel.selectedTrackId = nil
+                        }
 
                     // Lienzo del proyecto escalable y desplazable
                     ZStack {
                         config.backgroundColor.swiftUIColor
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                viewModel.selectedClipId = nil
+                                viewModel.selectedTrackId = nil
+                            }
 
                         // Renderizado de Capas Visuales en estricto orden de jerarquía (de abajo hacia arriba)
                         ForEach(viewModel.activeVisualLayersAtPlayhead) { layer in
@@ -320,9 +330,9 @@ public struct CanvasView: View {
             }
             if w > 0 && h > 0 {
                 let assetAspect = w / h
-                // SIEMPRE ajusta en altura los elementos que se agregan (100% de la altura del visor):
-                let elementH = fittedHeight
-                let elementW = fittedHeight * CGFloat(assetAspect)
+                // SIEMPRE ajusta en altura los elementos que se agregan (100% de la altura del visor, redondeo a enteros para evitar jitter):
+                let elementH = fittedHeight.rounded()
+                let elementW = (fittedHeight * CGFloat(assetAspect)).rounded()
                 return (elementW, elementH)
             }
         }

@@ -24,8 +24,9 @@ public struct NativeVideoPlayerView: NSViewRepresentable {
         if nsView.playerLayer.player != player {
             nsView.playerLayer.player = player
         }
-        // Aplicar escala de proxy en caso de previsualización al 50%
-        nsView.previewScale = previewScale
+        if nsView.previewScale != previewScale {
+            nsView.previewScale = previewScale
+        }
     }
 
     public static func dismantleNSView(_ nsView: PlayerContainerView, coordinator: ()) {
@@ -36,7 +37,9 @@ public struct NativeVideoPlayerView: NSViewRepresentable {
         public let playerLayer = AVPlayerLayer()
         public var previewScale: CGFloat = 1.0 {
             didSet {
-                needsLayout = true
+                if oldValue != previewScale {
+                    needsLayout = true
+                }
             }
         }
 
@@ -53,7 +56,13 @@ public struct NativeVideoPlayerView: NSViewRepresentable {
         private func setupLayer() {
             wantsLayer = true
             layer?.backgroundColor = NSColor.clear.cgColor
-            playerLayer.needsDisplayOnBoundsChange = true
+            playerLayer.needsDisplayOnBoundsChange = false
+            playerLayer.actions = [
+                "bounds": NSNull(),
+                "position": NSNull(),
+                "transform": NSNull(),
+                "contents": NSNull()
+            ]
             playerLayer.videoGravity = .resizeAspectFill
             layer?.addSublayer(playerLayer)
         }
@@ -62,7 +71,7 @@ public struct NativeVideoPlayerView: NSViewRepresentable {
             super.layout()
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            playerLayer.frame = bounds
+            playerLayer.frame = bounds.integral
             CATransaction.commit()
         }
     }

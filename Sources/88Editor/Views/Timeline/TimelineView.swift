@@ -320,6 +320,15 @@ public struct TimelineView: View {
                             let tracksTotalHeight = CGFloat(viewModel.project.tracks.count) * viewModel.trackHeight
                             ScrollView(.vertical, showsIndicators: false) {
                                 ZStack(alignment: .topLeading) {
+                                    // Fondo interactivo para deseleccionar al hacer clic en área vacía fuera de las pistas
+                                    Color.clear
+                                        .frame(width: effectiveLaneWidth + headerWidth, height: max(geo.size.height - 27, tracksTotalHeight + 120))
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            viewModel.selectedClipId = nil
+                                            viewModel.selectedTrackId = nil
+                                        }
+
                                     VStack(alignment: .leading, spacing: 0) {
                                         ForEach(viewModel.project.tracks) { track in
                                             TimelineTrackView(

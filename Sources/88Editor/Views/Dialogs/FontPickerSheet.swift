@@ -32,6 +32,7 @@ public struct FontPickerSheet: View {
                     dismiss()
                 }
                 .controlSize(.small)
+                .keyboardShortcut(.cancelAction)
             }
             .padding(14)
             .background(Color(NSColor.windowBackgroundColor))

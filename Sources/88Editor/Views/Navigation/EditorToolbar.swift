@@ -20,7 +20,7 @@ public struct EditorToolbar: View {
             .buttonStyle(.plain)
             .help("Alternar Galería de Medios (⌘1)")
 
-            // Título de la app y estado de cambios
+            // Título de la app y estado de cambios / autoguardado
             HStack(spacing: 8) {
                 AppLogoIconView(size: 24, cornerRadius: 5)
 
@@ -28,10 +28,25 @@ public struct EditorToolbar: View {
                     .font(.system(size: 12, weight: .semibold))
 
                 if viewModel.hasUnsavedChanges {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 7, height: 7)
-                        .help("Hay cambios sin guardar en el proyecto")
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 6, height: 6)
+                        Text("Cambios sin guardar")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .help("Hay cambios sin guardar (Autoguardado activo cada 30s o pulsa ⌘S)")
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                        Text(viewModel.autosaveStatusMessage)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .help("Proyecto e historial guardados")
                 }
             }
 

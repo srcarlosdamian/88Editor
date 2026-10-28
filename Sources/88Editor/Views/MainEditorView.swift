@@ -111,6 +111,40 @@ public struct MainEditorView: View {
         .onDisappear {
             keyboardManager.stopMonitoring()
         }
+        // Conexión con comandos del Menú superior de macOS
+        .onReceive(NotificationCenter.default.publisher(for: .promptNewProject)) { _ in
+            viewModel.isNewProjectSheetPresented = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .promptOpenProject)) { _ in
+            viewModel.promptOpenProjectPanel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .promptSaveProject)) { _ in
+            viewModel.saveProject()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .promptSaveProjectAs)) { _ in
+            viewModel.promptSavePanel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .promptImportMedia)) { _ in
+            viewModel.promptImportMediaPanel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .promptExportRender)) { _ in
+            viewModel.promptExportRenderPanel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .promptProjectSettings)) { _ in
+            viewModel.isProjectSettingsSheetPresented = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .splitClipAtPlayhead)) { _ in
+            viewModel.splitSelectedClipAtPlayhead()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .togglePlayback)) { _ in
+            viewModel.playbackEngine.togglePlayPause()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .undoAction)) { _ in
+            viewModel.undo()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .redoAction)) { _ in
+            viewModel.redo()
+        }
         // Modal inicial de proyecto
         .sheet(isPresented: $viewModel.isNewProjectSheetPresented) {
             NewProjectSheet(viewModel: viewModel)

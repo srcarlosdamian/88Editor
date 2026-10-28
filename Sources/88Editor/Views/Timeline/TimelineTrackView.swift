@@ -126,6 +126,11 @@ public struct TimelineTrackView: View {
                 Rectangle()
                     .fill(isDropTargeted ? Color.accentColor.opacity(0.15) : Color(NSColor.underPageBackgroundColor).opacity(0.5))
                     .frame(width: timelineWidth, height: currentHeight)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        viewModel.selectedClipId = nil
+                        viewModel.selectedTrackId = track.id
+                    }
 
                 // Línea inferior divisoria
                 Rectangle()
