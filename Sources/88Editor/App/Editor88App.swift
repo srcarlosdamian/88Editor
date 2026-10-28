@@ -30,11 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWindow.allowsAutomaticWindowTabbing = false
 
         // Establecer el icono oficial con esquinas redondeadas en el Dock de macOS
-        if let iconURL = Bundle.module.url(forResource: "AppIcon_Rounded", withExtension: "png") ?? Bundle.main.url(forResource: "AppIcon_Rounded", withExtension: "png"),
+        if let iconURL = Bundle.main.url(forResource: "AppIcon_Rounded", withExtension: "png") ?? Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
            let iconImg = NSImage(contentsOf: iconURL) {
             NSApp.applicationIconImage = iconImg
-        } else if let fallback = NSImage(contentsOfFile: "Sources/88Editor/Resources/AppIcon_Rounded.png") {
-            NSApp.applicationIconImage = fallback
+        } else if let icon = NSImage(named: NSImage.applicationIconName), icon.isValid {
+            NSApp.applicationIconImage = icon
         }
     }
 

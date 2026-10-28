@@ -37,15 +37,12 @@ public struct AppLogoIconView: View {
     }
 
     public static func getAppIconImage() -> NSImage? {
-        if let url = Bundle.module.url(forResource: "AppIcon_Rounded", withExtension: "png"),
+        if let icon = NSImage(named: NSImage.applicationIconName), icon.isValid {
+            return icon
+        }
+        if let url = Bundle.main.url(forResource: "AppIcon_Rounded", withExtension: "png") ?? Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
            let img = NSImage(contentsOf: url) {
             return img
-        }
-        if let fallback = NSImage(contentsOfFile: "Sources/88Editor/Resources/AppIcon_Rounded.png") {
-            return fallback
-        }
-        if let raw = NSImage(contentsOfFile: "Sources/88Editor/Resources/AppIcon.png") {
-            return raw
         }
         // Generación programática de alta fidelidad si no se encuentra el asset
         let dim: CGFloat = 512
