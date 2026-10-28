@@ -37,7 +37,11 @@ public final class EditorViewModel: ObservableObject {
     @Published public var selectedAssetId: UUID?
 
     // MARK: - UI & Modales
-    @Published public var isNewProjectSheetPresented: Bool = false
+    @Published public var isNewProjectSheetPresented: Bool = true // Solicitar nombre al inicio
+    @Published public var isProjectSettingsSheetPresented: Bool = false
+    @Published public var isExportSheetPresented: Bool = false
+    @Published public var exportProgress: Double = 0.0
+    @Published public var exportStatusMessage: String = "Preparando render..."
     @Published public var isFontPickerPresented: Bool = false
     @Published public var isInsertSheetPresented: Bool = false
     @Published public var insertSheetCategory: InsertItemCategory = .text
@@ -1228,6 +1232,118 @@ public final class EditorViewModel: ObservableObject {
             self.playbackEngine.seek(to: 0.0)
             self.rebuildComposition()
         }
+    }
+
+    public func updateProjectConfiguration(_ newConfig: ProjectConfiguration) {
+        project.configuration = newConfig
+        hasUnsavedChanges = true
+        debouncedRebuildComposition()
+        objectWillChange.send()
+    }
+
+    // MARK: - Exportación y Renderizado de Video
+    private var activeExportSession: AVAssetExportSession?
+    private var exportTimer: Timer?
+
+    public func promptExportRenderPanel() {
+        guard !project.tracks.isEmpty && !project.tracks.allSatisfy({ $0.clips.isEmpty }) else {
+            let alert = NSAlert()
+            alert.messageText = "Línea de tiempo vacía"
+            alert.informativeText = "Añade al menos un elemento o clip a la línea de tiempo antes de exportar el video."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.title = "Exportar y Renderizar Video"
+        panel.prompt = "Renderizar"
+        panel.nameFieldStringValue = "\(project.projectName).mp4"
+        panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie]
+
+        if panel.runModal() == .OK, let outputURL = panel.url {
+            startExport(to: outputURL)
+        }
+    }
+
+    public func startExport(to outputURL: URL) {
+        try? FileManager.default.removeItem(at: outputURL)
+
+        isExportSheetPresented = true
+        exportProgress = 0.0
+        exportStatusMessage = "Preparando composición de video y audio..."
+
+        Task {
+            let compResult = await CompositionBuilder.build(
+                tracks: project.tracks,
+                assets: assetsById,
+                configuration: project.configuration
+            )
+
+            await MainActor.run {
+                guard let exportSession = AVAssetExportSession(
+                    asset: compResult.composition,
+                    presetName: AVAssetExportPresetHighestQuality
+                ) else {
+                    self.exportStatusMessage = "Error al iniciar sesión de exportación."
+                    return
+                }
+
+                exportSession.outputURL = outputURL
+                exportSession.outputFileType = outputURL.pathExtension.lowercased() == "mov" ? .mov : .mp4
+                if let videoComp = compResult.videoComposition {
+                    exportSession.videoComposition = videoComp
+                }
+                if let audioMix = compResult.audioMix {
+                    exportSession.audioMix = audioMix
+                }
+
+                self.activeExportSession = exportSession
+                self.exportStatusMessage = "Renderizando fotogramas..."
+
+                self.exportTimer?.invalidate()
+                self.exportTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+                    Task { @MainActor [weak self] in
+                        guard let self = self, let session = self.activeExportSession else {
+                            timer.invalidate()
+                            return
+                        }
+                        self.exportProgress = Double(session.progress)
+
+                        if session.status == .completed {
+                            timer.invalidate()
+                            self.isExportSheetPresented = false
+                            self.activeExportSession = nil
+                            NSSound(named: "Glass")?.play()
+                            NSWorkspace.shared.activateFileViewerSelecting([outputURL])
+                        } else if session.status == .failed || session.status == .cancelled {
+                            timer.invalidate()
+                            self.isExportSheetPresented = false
+                            self.activeExportSession = nil
+                            if session.status == .failed {
+                                let alert = NSAlert()
+                                alert.messageText = "Fallo en la exportación"
+                                alert.informativeText = session.error?.localizedDescription ?? "Ocurrió un error inesperado al renderizar el video."
+                                alert.alertStyle = .critical
+                                alert.runModal()
+                            }
+                        }
+                    }
+                }
+
+                exportSession.exportAsynchronously {
+                    // Estado monitoreado por el temporizador
+                }
+            }
+        }
+    }
+
+    public func cancelExport() {
+        exportTimer?.invalidate()
+        exportTimer = nil
+        activeExportSession?.cancelExport()
+        activeExportSession = nil
+        isExportSheetPresented = false
     }
 
     public func checkUnsavedChangesBeforeAction(action: @escaping () -> Void) {

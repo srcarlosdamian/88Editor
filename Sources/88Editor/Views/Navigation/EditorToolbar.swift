@@ -70,6 +70,14 @@ public struct EditorToolbar: View {
 
                 Divider().frame(height: 16)
 
+                // Editar Ajustes de Proyecto (Tamaños, Resolución, etc.)
+                Button {
+                    viewModel.isProjectSettingsSheetPresented = true
+                } label: {
+                    Label("Editar", systemImage: "slider.horizontal.3")
+                }
+                .help("Editar tamaño, resolución y ajustes del proyecto")
+
                 // Importar Medios
                 Button {
                     viewModel.promptImportMediaPanel()
@@ -77,6 +85,14 @@ public struct EditorToolbar: View {
                     Label("Importar", systemImage: "arrow.down.doc")
                 }
                 .help("Importar archivos multimedia sin duplicar (⌘I)")
+
+                // Exportar / Renderizar Video
+                Button {
+                    viewModel.promptExportRenderPanel()
+                } label: {
+                    Label("Exportar", systemImage: "arrow.up.forward.app")
+                }
+                .help("Renderizar y exportar video final (⌘E)")
             }
 
             // Alternar barra lateral derecha (Inspector)

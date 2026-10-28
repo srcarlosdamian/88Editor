@@ -115,6 +115,14 @@ public struct MainEditorView: View {
         .sheet(isPresented: $viewModel.isNewProjectSheetPresented) {
             NewProjectSheet(viewModel: viewModel)
         }
+        // Modal de edición de ajustes y tamaño del proyecto
+        .sheet(isPresented: $viewModel.isProjectSettingsSheetPresented) {
+            ProjectSettingsSheet(viewModel: viewModel)
+        }
+        // Modal de exportación y renderizado
+        .sheet(isPresented: $viewModel.isExportSheetPresented) {
+            ExportRenderSheet(viewModel: viewModel)
+        }
         // Modal de selección de fuentes nativas (NSFontManager)
         .sheet(isPresented: $viewModel.isFontPickerPresented) {
             FontPickerSheet(viewModel: viewModel)

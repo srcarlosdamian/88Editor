@@ -480,145 +480,70 @@ public struct InspectorView: View {
 
             Divider().foregroundColor(DesignSystem.border)
 
-            // PARÁMETROS DE VIDEO
+            // PARÁMETROS DE VIDEO Y AJUSTES DE PROYECTO
             VStack(alignment: .leading, spacing: 12) {
                 Text("PARÁMETROS DE VIDEO")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.secondary)
 
-                // Selector de Preset de Formato y Relación de Aspecto
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Relación de Aspecto y Preset")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-
-                    Picker("", selection: Binding(
-                        get: { viewModel.project.configuration.preset },
-                        set: { newPreset in
-                            viewModel.project.configuration.preset = newPreset
-                            let dims = newPreset.defaultDimensions
-                            viewModel.project.configuration.width = Double(dims.width)
-                            viewModel.project.configuration.height = Double(dims.height)
-                            viewModel.hasUnsavedChanges = true
-                            viewModel.debouncedRebuildComposition()
-                        }
-                    )) {
-                        ForEach(ResolutionPreset.allCases) { preset in
-                            Text(preset.rawValue).tag(preset)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
-
-                // Resolución interactiva (Ancho × Alto)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Resolución (Píxeles)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: 8) {
-                        HStack(spacing: 4) {
-                            Text("W:")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(.secondary)
-                            TextField("1920", value: Binding(
-                                get: { viewModel.project.configuration.width },
-                                set: {
-                                    viewModel.project.configuration.width = max(100, $0)
-                                    viewModel.hasUnsavedChanges = true
-                                    viewModel.debouncedRebuildComposition()
-                                }
-                            ), format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .font(DesignSystem.monoFont)
-                        }
-
-                        Text("×")
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Formato y Preset:")
+                            .font(.system(size: 11))
                             .foregroundColor(.secondary)
+                        Spacer()
+                        Text(viewModel.project.configuration.preset.rawValue)
+                            .font(.system(size: 11, weight: .medium))
+                    }
 
-                        HStack(spacing: 4) {
-                            Text("H:")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(.secondary)
-                            TextField("1080", value: Binding(
-                                get: { viewModel.project.configuration.height },
-                                set: {
-                                    viewModel.project.configuration.height = max(100, $0)
-                                    viewModel.hasUnsavedChanges = true
-                                    viewModel.debouncedRebuildComposition()
-                                }
-                            ), format: .number)
-                            .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Text("Resolución:")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(viewModel.project.configuration.resolutionDisplayString)
                             .font(DesignSystem.monoFont)
-                        }
+                    }
+
+                    HStack {
+                        Text("Tasa de Cuadros:")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(viewModel.project.configuration.framerate.displayName)
+                            .font(.system(size: 11))
+                    }
+
+                    HStack {
+                        Text("Color del Lienzo:")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Circle()
+                            .fill(viewModel.project.configuration.backgroundColor.swiftUIColor)
+                            .frame(width: 14, height: 14)
+                            .overlay(Circle().stroke(Color.secondary, lineWidth: 1))
                     }
                 }
+                .padding(10)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                .cornerRadius(6)
 
-                // Tasa de Cuadros (Fotogramas por Segundo)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Tasa de Cuadros (Fotogramas)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-
-                    Picker("", selection: Binding(
-                        get: { viewModel.project.configuration.framerate },
-                        set: {
-                            viewModel.project.configuration.framerate = $0
-                            viewModel.hasUnsavedChanges = true
-                            viewModel.debouncedRebuildComposition()
-                        }
-                    )) {
-                        ForEach(FramerateOption.allCases) { opt in
-                            Text(opt.displayName).tag(opt)
-                        }
+                // Botón Editar Tamaño y Ajustes en Modal con confirmación
+                Button {
+                    viewModel.isProjectSettingsSheetPresented = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 11))
+                        Text("Editar Tamaño y Ajustes...")
+                            .font(.system(size: 11, weight: .semibold))
                     }
-                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity)
                 }
-
-                // Color de Fondo del Lienzo
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Color de Fondo del Lienzo")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: 8) {
-                        Button {
-                            viewModel.project.configuration.backgroundColor = .black
-                            viewModel.hasUnsavedChanges = true
-                        } label: {
-                            Circle()
-                                .fill(Color.black)
-                                .frame(width: 20, height: 20)
-                                .overlay(Circle().stroke(viewModel.project.configuration.backgroundColor == .black ? Color.accentColor : Color.secondary, lineWidth: viewModel.project.configuration.backgroundColor == .black ? 2 : 1))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Fondo Negro")
-
-                        Button {
-                            viewModel.project.configuration.backgroundColor = .darkGray
-                            viewModel.hasUnsavedChanges = true
-                        } label: {
-                            Circle()
-                                .fill(Color(white: 0.12))
-                                .frame(width: 20, height: 20)
-                                .overlay(Circle().stroke(viewModel.project.configuration.backgroundColor == .darkGray ? Color.accentColor : Color.secondary, lineWidth: viewModel.project.configuration.backgroundColor == .darkGray ? 2 : 1))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Fondo Gris Oscuro")
-
-                        Button {
-                            viewModel.project.configuration.backgroundColor = .pureWhite
-                            viewModel.hasUnsavedChanges = true
-                        } label: {
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 20, height: 20)
-                                .overlay(Circle().stroke(viewModel.project.configuration.backgroundColor == .pureWhite ? Color.accentColor : Color.secondary, lineWidth: viewModel.project.configuration.backgroundColor == .pureWhite ? 2 : 1))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Fondo Blanco")
-                    }
-                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .help("Modificar dimensiones, resolución y tasa de cuadros en modal")
             }
 
             Divider().foregroundColor(DesignSystem.border)

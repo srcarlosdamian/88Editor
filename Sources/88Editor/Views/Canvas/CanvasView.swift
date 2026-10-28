@@ -182,30 +182,25 @@ public struct CanvasView: View {
                             lastCanvasZoom = canvasZoom
                         }
                 )
-                // Gesto de Arrastre para Pan cuando se tiene Zoom aplicado
+                // Gesto de Arrastre para Pan sólo cuando se tiene Zoom aplicado (> 1.0)
                 .gesture(
-                    DragGesture()
+                    canvasZoom > 1.0 ?
+                    DragGesture(minimumDistance: 15)
                         .onChanged { val in
-                            if canvasZoom > 1.0 {
-                                canvasPanOffset = CGSize(
-                                    width: lastPanOffset.width + val.translation.width,
-                                    height: lastPanOffset.height + val.translation.height
-                                )
-                            }
+                            canvasPanOffset = CGSize(
+                                width: lastPanOffset.width + val.translation.width,
+                                height: lastPanOffset.height + val.translation.height
+                            )
                         }
                         .onEnded { _ in
                             lastPanOffset = canvasPanOffset
                         }
+                    : nil
                 )
                 // Doble clic para restablecer zoom y centrado
                 .onTapGesture(count: 2) {
                     resetZoom()
                 }
-                .simultaneousGesture(
-                    TapGesture().onEnded {
-                        NSApp.keyWindow?.makeFirstResponder(nil)
-                    }
-                )
             }
 
             // Barra de transporte inferior
@@ -303,16 +298,10 @@ public struct CanvasView: View {
         }
         if let asset = viewModel.asset(for: clip), asset.width > 0 && asset.height > 0 {
             let assetAspect = Double(asset.width) / Double(asset.height)
-            let canvasAspect = Double(fittedWidth) / Double(fittedHeight)
-            if assetAspect > canvasAspect {
-                let w = fittedWidth
-                let h = fittedWidth / CGFloat(assetAspect)
-                return (w, h)
-            } else {
-                let h = fittedHeight
-                let w = fittedHeight * CGFloat(assetAspect)
-                return (w, h)
-            }
+            // SIEMPRE ajusta en altura los elementos que se agregan (100% de la altura del visor):
+            let h = fittedHeight
+            let w = fittedHeight * CGFloat(assetAspect)
+            return (w, h)
         }
         return (fittedWidth, fittedHeight)
     }
@@ -385,6 +374,14 @@ public struct CanvasView: View {
                     .padding(10)
             }
         }
+        .overlay(
+            // Detector de clic directo en el canvas para seleccionar el elemento
+            Color.white.opacity(0.0001)
+                .onTapGesture {
+                    viewModel.selectedClipId = clip.id
+                    viewModel.selectedTrackId = clip.trackId
+                }
+        )
         .offset(x: clip.positionX + currentDrag.width, y: clip.positionY + currentDrag.height)
         .scaleEffect(dynamicScale * currentScaleMult)
         .rotationEffect(.degrees(dynamicRotation))
@@ -392,6 +389,7 @@ public struct CanvasView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             viewModel.selectedClipId = clip.id
+            viewModel.selectedTrackId = clip.trackId
         }
     }
 
@@ -457,41 +455,43 @@ public struct CanvasView: View {
                     .updating($liveScaleDelta) { val, state, _ in
                         let dx = val.translation.width
                         let dy = val.translation.height
+                        let halfW = max(20.0, (baseW * CGFloat(dynamicScale)) / 2.0)
+                        let halfH = max(20.0, (baseH * CGFloat(dynamicScale)) / 2.0)
+
                         let delta: CGFloat
                         switch corner {
                         case .bottomRight:
-                            delta = (dx + dy) / 2.0
+                            delta = (dx / halfW + dy / halfH) / 2.0
                         case .topRight:
-                            delta = (dx - dy) / 2.0
+                            delta = (dx / halfW - dy / halfH) / 2.0
                         case .bottomLeft:
-                            delta = (-dx + dy) / 2.0
+                            delta = (-dx / halfW + dy / halfH) / 2.0
                         case .topLeft:
-                            delta = (-dx - dy) / 2.0
+                            delta = (-dx / halfW - dy / halfH) / 2.0
                         }
 
-                        let refDim = max(120.0, max(baseW, baseH) * CGFloat(dynamicScale))
-                        let scaleDelta = delta / (refDim * 0.5)
-                        let factor = max(0.05, 1.0 + scaleDelta)
+                        let factor = max(0.05, 1.0 + delta)
                         state = factor
                     }
                     .onEnded { val in
                         let dx = val.translation.width
                         let dy = val.translation.height
+                        let halfW = max(20.0, (baseW * CGFloat(dynamicScale)) / 2.0)
+                        let halfH = max(20.0, (baseH * CGFloat(dynamicScale)) / 2.0)
+
                         let delta: CGFloat
                         switch corner {
                         case .bottomRight:
-                            delta = (dx + dy) / 2.0
+                            delta = (dx / halfW + dy / halfH) / 2.0
                         case .topRight:
-                            delta = (dx - dy) / 2.0
+                            delta = (dx / halfW - dy / halfH) / 2.0
                         case .bottomLeft:
-                            delta = (-dx + dy) / 2.0
+                            delta = (-dx / halfW + dy / halfH) / 2.0
                         case .topLeft:
-                            delta = (-dx - dy) / 2.0
+                            delta = (-dx / halfW - dy / halfH) / 2.0
                         }
 
-                        let refDim = max(120.0, max(baseW, baseH) * CGFloat(dynamicScale))
-                        let scaleDelta = delta / (refDim * 0.5)
-                        let factor = max(0.05, 1.0 + scaleDelta)
+                        let factor = max(0.05, 1.0 + delta)
                         let currentScale = clip.scale(at: viewModel.currentClipRelativeTime)
                         let newScale = max(0.05, min(10.0, currentScale * factor))
                         viewModel.updateAnimatableProperty(.scale, value: newScale)

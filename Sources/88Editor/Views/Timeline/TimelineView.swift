@@ -265,11 +265,11 @@ public struct TimelineView: View {
                         handleDropToEmptyTimeline(providers: providers)
                     }
                 } else {
-                    // Vista completa con pistas y regla temporal expansivas (desplazamiento natural sin barras superpuestas)
-                    ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                        ZStack(alignment: .topLeading) {
-                            VStack(alignment: .leading, spacing: 0) {
-                                // Regla temporal superior
+                    // Vista completa con Regla Temporal FIJA arriba y desplazamiento sincronizado
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            // 1. REGLA TEMPORAL SUPERIOR FIJA (No se desplaza al hacer scroll vertical en pistas)
+                            ZStack(alignment: .topLeading) {
                                 HStack(spacing: 0) {
                                     Rectangle()
                                         .fill(Color(NSColor.controlBackgroundColor))
@@ -298,36 +298,62 @@ public struct TimelineView: View {
                                     .frame(width: effectiveLaneWidth, height: 26)
                                 }
 
-                                // Pistas independientes con soporte de zoom vertical y horizontal
-                                ForEach(viewModel.project.tracks) { track in
-                                    TimelineTrackView(
-                                        track: track,
-                                        viewModel: viewModel,
-                                        timelineWidth: effectiveLaneWidth
-                                    )
-                                }
-                            }
-
-                            // Playhead interactivo
-                            let playheadX = headerWidth + CGFloat(viewModel.playbackEngine.currentTime) * CGFloat(viewModel.timelineZoom)
-                            let totalHeight = CGFloat(26 + CGFloat(viewModel.project.tracks.count) * viewModel.trackHeight)
-
-                            // Línea de Guía Magnética (Snap Guide Line entre capas)
-                            if let snapTime = viewModel.snapGuideLineTime {
-                                let snapX = headerWidth + CGFloat(snapTime) * CGFloat(viewModel.timelineZoom)
-                                Rectangle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 2)
-                                    .frame(height: max(geo.size.height, totalHeight))
-                                    .position(x: snapX, y: max(geo.size.height, totalHeight) / 2)
-                                    .shadow(color: Color.accentColor.opacity(0.85), radius: 4)
+                                // Indicador / Aguja superior roja del Playhead en la regla fija
+                                let playheadX = headerWidth + CGFloat(viewModel.playbackEngine.currentTime) * CGFloat(viewModel.timelineZoom)
+                                PlayheadNeedleShape()
+                                    .fill(DesignSystem.playhead)
+                                    .frame(width: 14, height: 14)
+                                    .shadow(color: Color.black.opacity(0.35), radius: 2, x: 0, y: 1)
+                                    .position(x: playheadX, y: 19)
                                     .allowsHitTesting(false)
                             }
+                            .frame(width: effectiveLaneWidth + headerWidth, height: 26)
+                            .zIndex(100)
 
-                            PlayheadView(
-                                positionX: playheadX,
-                                height: max(geo.size.height, totalHeight)
-                            )
+                            // Línea divisoria bajo la regla fija
+                            Rectangle()
+                                .fill(DesignSystem.border)
+                                .frame(width: effectiveLaneWidth + headerWidth, height: 1)
+                                .zIndex(99)
+
+                            // 2. PISTAS CON SCROLL VERTICAL INDEPENDIENTE
+                            let tracksTotalHeight = CGFloat(viewModel.project.tracks.count) * viewModel.trackHeight
+                            ScrollView(.vertical, showsIndicators: false) {
+                                ZStack(alignment: .topLeading) {
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        ForEach(viewModel.project.tracks) { track in
+                                            TimelineTrackView(
+                                                track: track,
+                                                viewModel: viewModel,
+                                                timelineWidth: effectiveLaneWidth
+                                            )
+                                        }
+                                    }
+
+                                    // Línea de Guía Magnética (Snap Guide Line entre capas)
+                                    if let snapTime = viewModel.snapGuideLineTime {
+                                        let snapX = headerWidth + CGFloat(snapTime) * CGFloat(viewModel.timelineZoom)
+                                        Rectangle()
+                                            .fill(Color.primary.opacity(0.8))
+                                            .frame(width: 2)
+                                            .frame(height: max(geo.size.height - 27, tracksTotalHeight))
+                                            .position(x: snapX, y: max(geo.size.height - 27, tracksTotalHeight) / 2)
+                                            .shadow(color: Color.primary.opacity(0.6), radius: 3)
+                                            .allowsHitTesting(false)
+                                    }
+
+                                    // Línea vertical roja del Playhead a través de todas las pistas
+                                    let playheadX = headerWidth + CGFloat(viewModel.playbackEngine.currentTime) * CGFloat(viewModel.timelineZoom)
+                                    Rectangle()
+                                        .fill(DesignSystem.playhead)
+                                        .frame(width: 1.5)
+                                        .frame(height: max(geo.size.height - 27, tracksTotalHeight))
+                                        .position(x: playheadX, y: max(geo.size.height - 27, tracksTotalHeight) / 2)
+                                        .allowsHitTesting(false)
+                                }
+                                .frame(width: effectiveLaneWidth + headerWidth, alignment: .leading)
+                            }
+                            .frame(maxHeight: .infinity)
                         }
                         .frame(width: effectiveLaneWidth + headerWidth, alignment: .leading)
                     }
