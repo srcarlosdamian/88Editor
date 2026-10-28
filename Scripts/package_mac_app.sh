@@ -33,7 +33,6 @@ chmod +x "$APP_DIR/Contents/MacOS/88Editor"
 cp Sources/88Editor/Resources/AppIcon.icns "$APP_DIR/Contents/Resources/AppIcon.icns"
 cp Sources/88Editor/Resources/AppIcon_Rounded.png "$APP_DIR/Contents/Resources/AppIcon_Rounded.png" 2>/dev/null || true
 if [ -d ".build/arm64-apple-macosx/release/88Editor_88Editor.bundle" ]; then
-    cp -R .build/arm64-apple-macosx/release/88Editor_88Editor.bundle "$APP_DIR/"
     cp -R .build/arm64-apple-macosx/release/88Editor_88Editor.bundle "$APP_DIR/Contents/Resources/"
     cp -R .build/arm64-apple-macosx/release/88Editor_88Editor.bundle "$APP_DIR/Contents/MacOS/"
 fi
