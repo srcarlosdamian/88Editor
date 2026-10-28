@@ -405,9 +405,6 @@ public struct TimelineView: View {
                                         onSetWorkAreaOut: { newOut in
                                             viewModel.setWorkAreaOut(to: newOut)
                                         },
-                                        onShiftWorkArea: { delta in
-                                            viewModel.shiftWorkArea(by: delta)
-                                        },
                                         onResetWorkArea: {
                                             viewModel.resetWorkArea()
                                         }

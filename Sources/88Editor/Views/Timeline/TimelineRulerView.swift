@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Regla temporal interactiva graduada en segundos con marcas de tiempo,
-/// soporte de Área de Trabajo / Rango de Renderizado (Puntos In y Out) arrastrables y atajos de teclado (I / O / ⌥X).
+/// soporte de Área de Trabajo / Rango de Renderizado (Puntos In y Out) arrastrables ÚNICAMENTE desde sus extremos
+/// y navegación libre (Seek / Scrub) en el centro y a lo largo de toda la regla.
 public struct TimelineRulerView: View {
     let duration: Double
     let zoom: Double // píxeles por segundo
@@ -10,8 +11,10 @@ public struct TimelineRulerView: View {
     let onSeek: (Double) -> Void
     var onSetWorkAreaIn: ((Double) -> Void)? = nil
     var onSetWorkAreaOut: ((Double) -> Void)? = nil
-    var onShiftWorkArea: ((Double) -> Void)? = nil
     var onResetWorkArea: (() -> Void)? = nil
+
+    @State private var dragInitialIn: Double? = nil
+    @State private var dragInitialOut: Double? = nil
 
     public init(
         duration: Double,
@@ -21,7 +24,6 @@ public struct TimelineRulerView: View {
         onSeek: @escaping (Double) -> Void,
         onSetWorkAreaIn: ((Double) -> Void)? = nil,
         onSetWorkAreaOut: ((Double) -> Void)? = nil,
-        onShiftWorkArea: ((Double) -> Void)? = nil,
         onResetWorkArea: (() -> Void)? = nil
     ) {
         self.duration = duration
@@ -31,7 +33,6 @@ public struct TimelineRulerView: View {
         self.onSeek = onSeek
         self.onSetWorkAreaIn = onSetWorkAreaIn
         self.onSetWorkAreaOut = onSetWorkAreaOut
-        self.onShiftWorkArea = onShiftWorkArea
         self.onResetWorkArea = onResetWorkArea
     }
 
@@ -45,14 +46,15 @@ public struct TimelineRulerView: View {
             // Rango de renderizado / In & Out
             let hasCustomArea = workAreaIn != nil || workAreaOut != nil
             let effIn = max(0.0, workAreaIn ?? 0.0)
-            let effOut = max(effIn + 0.1, min(duration, workAreaOut ?? duration))
+            let effOut = max(effIn + 0.2, min(duration, workAreaOut ?? duration))
             let inX = CGFloat(effIn) * CGFloat(zoom)
             let outX = CGFloat(effOut) * CGFloat(zoom)
             let barWidth = max(4, outX - inX)
 
-            ZStack(alignment: .bottomLeading) {
+            ZStack(alignment: .topLeading) {
                 // 1. Fondo base de la regla
                 Color(NSColor.controlBackgroundColor)
+                    .frame(width: totalWidth, height: 26)
 
                 // 2. Marcas de tiempo y números (Atenuadas si sobrepasan el fin del proyecto)
                 ForEach(0...totalSeconds, id: \.self) { second in
@@ -115,7 +117,8 @@ public struct TimelineRulerView: View {
                     .allowsHitTesting(false)
                 }
 
-                // 4. Franja visual del Área de Trabajo (In / Out) decorativa (no intercepta clics)
+                // 4. Franja visual del Área de Trabajo (In / Out) decorativa: NO intercepta clics
+                // Permitiendo que cualquier clic o arrastre en el medio desplace el cabezal (Seek) sin alterar In/Out
                 if hasCustomArea && outX > inX {
                     ZStack(alignment: .top) {
                         Rectangle()
@@ -127,56 +130,52 @@ public struct TimelineRulerView: View {
                             .fill(Color.white.opacity(0.85))
                             .frame(width: barWidth, height: 3.0)
                     }
-                    .position(x: inX + barWidth / 2, y: 13)
+                    .frame(width: barWidth, height: 26)
+                    .offset(x: inX, y: 0)
                     .allowsHitTesting(false)
                 }
 
-                // 4. Extremo Izquierdo: Corchete de Entrada (Punto In `[`)
+                // 5. Extremos interactivos: SOLO se mueven desde los extremos (corchetes)
                 if hasCustomArea {
-                    WorkAreaBracketShape(isLeft: true)
-                        .fill(Color.white)
-                        .frame(width: 12, height: 22)
-                        .position(x: inX + 6, y: 13)
-                        .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
-                        .contentShape(Rectangle())
-                        .help("Extremo In: Arrastrar para ajustar punto de entrada")
-                        .zIndex(20)
-                        .onHover { hovering in
-                            if hovering {
-                                NSCursor.resizeLeftRight.push()
-                            } else {
-                                NSCursor.pop()
-                            }
-                        }
-                        .highPriorityGesture(
-                            DragGesture()
+                    // Extremo Izquierdo: Corchete de Entrada (Punto In `[`)
+                    WorkAreaBracketView(isLeft: true)
+                        .frame(width: 14, height: 24)
+                        .offset(x: max(0, inX), y: 1)
+                        .zIndex(30)
+                        .gesture(
+                            DragGesture(minimumDistance: 1)
                                 .onChanged { val in
-                                    let newTime = max(0, min(effOut - 0.1, Double(val.location.x) / zoom))
+                                    if dragInitialIn == nil {
+                                        dragInitialIn = effIn
+                                    }
+                                    let start = dragInitialIn ?? effIn
+                                    let deltaSeconds = Double(val.translation.width) / zoom
+                                    let newTime = max(0, min(effOut - 0.2, start + deltaSeconds))
                                     onSetWorkAreaIn?(newTime)
+                                }
+                                .onEnded { _ in
+                                    dragInitialIn = nil
                                 }
                         )
 
-                    // 5. Extremo Derecho: Corchete de Salida (Punto Out `]`)
-                    WorkAreaBracketShape(isLeft: false)
-                        .fill(Color.white)
-                        .frame(width: 12, height: 22)
-                        .position(x: outX - 6, y: 13)
-                        .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
-                        .contentShape(Rectangle())
-                        .help("Extremo Out: Arrastrar para ajustar punto de salida")
-                        .zIndex(20)
-                        .onHover { hovering in
-                            if hovering {
-                                NSCursor.resizeLeftRight.push()
-                            } else {
-                                NSCursor.pop()
-                            }
-                        }
-                        .highPriorityGesture(
-                            DragGesture()
+                    // Extremo Derecho: Corchete de Salida (Punto Out `]`)
+                    WorkAreaBracketView(isLeft: false)
+                        .frame(width: 14, height: 24)
+                        .offset(x: max(inX + 14, outX - 14), y: 1)
+                        .zIndex(30)
+                        .gesture(
+                            DragGesture(minimumDistance: 1)
                                 .onChanged { val in
-                                    let newTime = max(effIn + 0.1, min(duration, Double(val.location.x) / zoom))
+                                    if dragInitialOut == nil {
+                                        dragInitialOut = effOut
+                                    }
+                                    let start = dragInitialOut ?? effOut
+                                    let deltaSeconds = Double(val.translation.width) / zoom
+                                    let newTime = max(effIn + 0.2, min(duration, start + deltaSeconds))
                                     onSetWorkAreaOut?(newTime)
+                                }
+                                .onEnded { _ in
+                                    dragInitialOut = nil
                                 }
                         )
                 }
@@ -184,10 +183,11 @@ public struct TimelineRulerView: View {
                 // Línea inferior divisoria
                 Rectangle()
                     .fill(DesignSystem.border)
-                    .frame(height: 1)
+                    .frame(width: totalWidth, height: 1)
+                    .offset(x: 0, y: 25)
                     .allowsHitTesting(false)
             }
-            .frame(width: totalWidth, height: 26)
+            .frame(width: totalWidth, height: 26, alignment: .topLeading)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -227,6 +227,43 @@ public struct TimelineRulerView: View {
         let m = second / 60
         let s = second % 60
         return String(format: "%02d:%02d", m, s)
+    }
+}
+
+/// Vista del tirador del corchete para ajustar In u Out con feedback visual y cursor nativo
+struct WorkAreaBracketView: View {
+    let isLeft: Bool
+    @State private var isHovering: Bool = false
+
+    var body: some View {
+        ZStack {
+            // Fondo para fácil agarre con el ratón
+            Color.clear
+                .contentShape(Rectangle())
+
+            WorkAreaBracketShape(isLeft: isLeft)
+                .fill(isHovering ? Color.accentColor : Color.white)
+                .frame(width: 12, height: 22)
+                .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
+
+            // Letra de guía sutil indicativa de Extremo
+            Text(isLeft ? "I" : "O")
+                .font(.system(size: 8, weight: .black, design: .monospaced))
+                .foregroundColor(isHovering ? .white : Color.primary.opacity(0.75))
+                .offset(x: isLeft ? 1 : -1, y: 0)
+                .allowsHitTesting(false)
+        }
+        .frame(width: 14, height: 24)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering {
+                NSCursor.resizeLeftRight.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .help(isLeft ? "Extremo In: Arrastra este tirador para ajustar el punto de entrada" : "Extremo Out: Arrastra este tirador para ajustar el punto de salida")
     }
 }
 
