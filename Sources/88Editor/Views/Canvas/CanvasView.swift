@@ -221,7 +221,7 @@ public struct CanvasView: View {
             )
         }
         .background(Color(NSColor.underPageBackgroundColor))
-        // Atajos de teclado para Zoom del Canvas
+        // Atajos de teclado para Zoom del Canvas y selección
         .background(
             ZStack {
                 // Cmd + o Cmd = para Zoom In
@@ -235,6 +235,12 @@ public struct CanvasView: View {
                 // Cmd 0 para Restablecer
                 Button("") { resetZoom() }
                     .keyboardShortcut("0", modifiers: [.command])
+                // Esc para deseleccionar
+                Button("") {
+                    viewModel.selectedClipId = nil
+                    viewModel.selectedTrackId = nil
+                }
+                .keyboardShortcut(.escape, modifiers: [])
             }
             .opacity(0)
         )
@@ -418,6 +424,7 @@ public struct CanvasView: View {
         .overlay(
             // Detector de clic directo en el canvas para seleccionar el elemento
             Color.white.opacity(0.0001)
+                .contentShape(Rectangle())
                 .onTapGesture {
                     viewModel.selectedClipId = clip.id
                     viewModel.selectedTrackId = clip.trackId
@@ -528,8 +535,16 @@ public struct CanvasView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 3)
                 .stroke(DesignSystem.selectedClipBorder, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
-                .background(Color.clear)
+                .background(
+                    Color.white.opacity(0.0001)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            viewModel.selectedClipId = clip.id
+                            viewModel.selectedTrackId = clip.trackId
+                        }
+                )
                 .frame(width: baseW, height: baseH)
+                .contentShape(Rectangle())
                 .gesture(
                     DragGesture(coordinateSpace: .named("CanvasWorkspace"))
                         .updating($liveDragTranslation) { value, state, _ in

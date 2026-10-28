@@ -1434,47 +1434,44 @@ public final class EditorViewModel: ObservableObject {
 
     public func saveProject(to url: URL? = nil) {
         let destinationURL = url ?? currentProjectURL
-        guard var finalURL = destinationURL else {
+        guard let finalURL = destinationURL else {
             promptSavePanel()
             return
         }
 
-        // Si el usuario renombró el proyecto dentro del programa y el archivo físico tiene otro nombre,
-        // sincronizamos el nombre del archivo en disco con el nombre del proyecto
-        let currentFileBase = finalURL.deletingPathExtension().lastPathComponent
-        let cleanProjectName = project.projectName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !cleanProjectName.isEmpty && cleanProjectName != currentFileBase && url == nil {
-            let renamedURL = finalURL.deletingLastPathComponent().appendingPathComponent("\(cleanProjectName).88proj")
-            if !FileManager.default.fileExists(atPath: renamedURL.path) {
-                if FileManager.default.fileExists(atPath: finalURL.path) {
-                    try? FileManager.default.moveItem(at: finalURL, to: renamedURL)
-                }
-                finalURL = renamedURL
-            }
+        // Sincronizar el nombre del proyecto con el nombre del archivo guardado
+        let fileBaseName = finalURL.deletingPathExtension().lastPathComponent
+        if !fileBaseName.isEmpty {
+            self.project.projectName = fileBaseName
         }
 
         do {
-            project.modifiedAt = Date()
+            self.project.modifiedAt = Date()
             // El historial se guarda junto al documento respetando el límite estándar (35 estados ligeros ~50KB)
-            project.savedHistory = Array(historyStates.suffix(maxHistoryStates))
-            project.savedHistoryIndex = currentHistoryIndex
-            let data = try project.serialize()
+            self.project.savedHistory = Array(historyStates.suffix(maxHistoryStates))
+            self.project.savedHistoryIndex = currentHistoryIndex
+            let data = try self.project.serialize()
             try data.write(to: finalURL, options: .atomic)
-            currentProjectURL = finalURL
-            hasUnsavedChanges = false
-            lastSavedTimestamp = Date()
-            autosaveStatusMessage = "Guardado"
+            self.currentProjectURL = finalURL
+            self.hasUnsavedChanges = false
+            self.lastSavedTimestamp = Date()
+            self.autosaveStatusMessage = "Guardado"
 
             // Estampar el icono oficial de 88 Editor en el archivo .88proj del sistema de archivos (Finder)
             if let appIcon = AppLogoIconView.getAppIconImage() {
                 NSWorkspace.shared.setIcon(appIcon, forFile: finalURL.path, options: [])
             }
 
-            RecentProjectsManager.shared.add(url: finalURL, name: project.projectName)
+            RecentProjectsManager.shared.add(url: finalURL, name: self.project.projectName)
             print("[88 Editor] Proyecto e historial guardados exitosamente en \(finalURL.path)")
-            objectWillChange.send()
+            self.objectWillChange.send()
         } catch {
             print("[88 Editor] Error al guardar proyecto: \(error.localizedDescription)")
+            let alert = NSAlert()
+            alert.messageText = "Error al guardar proyecto"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .critical
+            alert.runModal()
         }
     }
 
@@ -1499,6 +1496,12 @@ public final class EditorViewModel: ObservableObject {
         do {
             let data = try Data(contentsOf: url)
             var loadedProject = try ProjectDocument.deserialize(from: data)
+
+            // Sincronizar nombre con el archivo abierto
+            let fileBaseName = url.deletingPathExtension().lastPathComponent
+            if !fileBaseName.isEmpty {
+                loadedProject.projectName = fileBaseName
+            }
 
             // Resolver Security-Scoped Bookmarks de los assets vinculados
             for (idx, asset) in loadedProject.assets.enumerated() {
@@ -1528,9 +1531,15 @@ public final class EditorViewModel: ObservableObject {
 
             self.rebuildComposition()
             self.playbackEngine.seek(to: 0.0)
-            objectWillChange.send()
+            self.objectWillChange.send()
+            print("[88 Editor] Proyecto cargado exitosamente desde \(url.path)")
         } catch {
             print("[88 Editor] Error cargando proyecto desde \(url.path): \(error)")
+            let alert = NSAlert()
+            alert.messageText = "Error al abrir proyecto"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .critical
+            alert.runModal()
         }
     }
 
