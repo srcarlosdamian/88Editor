@@ -62,10 +62,11 @@ public struct ProjectDocument: Identifiable, Codable, Equatable {
         self.workAreaOut = try container.decodeIfPresent(Double.self, forKey: .workAreaOut)
     }
 
-    /// Duración total del proyecto calculada a partir del clip más lejano
+    /// Duración total del proyecto calculada a partir del clip más lejano o la duración configurada en el proyecto
     public var totalDuration: Double {
         let maxTime = tracks.flatMap { $0.clips }.map { $0.endTime }.max() ?? 0.0
-        return max(maxTime, 5.0) // Al menos 5 segundos de lienzo visible
+        let baseDuration = configuration.defaultDuration
+        return max(maxTime, baseDuration, 5.0)
     }
 
     /// Punto de inicio efectivo para el renderizado / área de trabajo (por defecto 0.0s)

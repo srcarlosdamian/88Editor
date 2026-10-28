@@ -203,6 +203,46 @@ public struct TimelineView: View {
 
                 Spacer()
 
+                // Duración Total del Timeline y Acceso Rápido para Añadir Tiempo
+                HStack(spacing: 6) {
+                    Menu {
+                        Button("+ 5 segundos") { viewModel.addProjectDuration(seconds: 5) }
+                        Button("+ 10 segundos") { viewModel.addProjectDuration(seconds: 10) }
+                        Button("+ 30 segundos") { viewModel.addProjectDuration(seconds: 30) }
+                        Button("+ 1 minuto") { viewModel.addProjectDuration(seconds: 60) }
+                        Divider()
+                        Button("15s (Reels / TikTok / Shorts)") { viewModel.setProjectDuration(seconds: 15) }
+                        Button("30s (Story / Comercial)") { viewModel.setProjectDuration(seconds: 30) }
+                        Button("60s (1 minuto)") { viewModel.setProjectDuration(seconds: 60) }
+                        Button("120s (2 minutos)") { viewModel.setProjectDuration(seconds: 120) }
+                        Button("300s (5 minutos)") { viewModel.setProjectDuration(seconds: 300) }
+                        Divider()
+                        Button("Ajustes del Proyecto...") { viewModel.isProjectSettingsSheetPresented = true }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 10))
+                            Text("Duración: \(String(format: "%.0fs", viewModel.project.totalDuration))")
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 8))
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Duración total de la línea de tiempo. Clic para cambiar o añadir tiempo.")
+
+                    Button("+10s") {
+                        viewModel.addProjectDuration(seconds: 10)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .font(.system(size: 9, weight: .semibold))
+                    .help("Añadir 10 segundos adicionales a la línea de tiempo")
+                }
+
+                Divider().frame(height: 16)
+
                 // Zoom Vertical (Altura de Pistas de Audio y Video)
                 Menu {
                     Button("Compacta (36px)") { withAnimation { viewModel.trackHeight = 36 } }

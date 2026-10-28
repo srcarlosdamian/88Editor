@@ -110,6 +110,11 @@ public final class PlaybackEngine: ObservableObject {
         seek(to: currentTime)
     }
 
+    /// Actualiza la duración total conocida del proyecto
+    public func updateTotalDuration(_ duration: Double) {
+        self.totalDuration = max(duration, 1.0)
+    }
+
     /// Alterna entre reproducción y pausa (Barra espaciadora)
     public func togglePlayPause() {
         if isPlaying {

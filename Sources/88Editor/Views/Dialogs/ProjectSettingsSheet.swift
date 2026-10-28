@@ -13,6 +13,7 @@ public struct ProjectSettingsSheet: View {
     @State private var customHeight: Double = 1080
     @State private var selectedFramerate: FramerateOption = .fps30
     @State private var selectedColorOption: Int = 0
+    @State private var projectDuration: Double = 10.0
 
     public init(viewModel: EditorViewModel) {
         self.viewModel = viewModel
@@ -141,6 +142,53 @@ public struct ProjectSettingsSheet: View {
                             colorOptionButton(title: "Blanco", color: .white, index: 2)
                         }
                     }
+
+                    // Duración del Proyecto y Línea de Tiempo
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Duración de la Línea de Tiempo")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Text(String(format: "%.0fs (%.1f min)", projectDuration, projectDuration / 60.0))
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack(spacing: 8) {
+                            TextField("10", value: $projectDuration, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+
+                            Text("segundos")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+
+                            Spacer()
+
+                            // Botones de incremento rápido
+                            Button("+5s") { projectDuration += 5 }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            Button("+10s") { projectDuration += 10 }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            Button("+30s") { projectDuration += 30 }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            Button("+1m") { projectDuration += 60 }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                        }
+
+                        // Presets comunes de duración
+                        HStack(spacing: 6) {
+                            durationPresetButton(title: "15s (Reels)", seconds: 15)
+                            durationPresetButton(title: "30s (Story)", seconds: 30)
+                            durationPresetButton(title: "60s (1 min)", seconds: 60)
+                            durationPresetButton(title: "120s (2 min)", seconds: 120)
+                            durationPresetButton(title: "300s (5 min)", seconds: 300)
+                        }
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 20)
@@ -172,7 +220,7 @@ public struct ProjectSettingsSheet: View {
                 alignment: .top
             )
         }
-        .frame(width: 520, height: 530)
+        .frame(width: 520, height: 600)
         .onAppear {
             loadCurrentSettings()
         }
@@ -186,6 +234,7 @@ public struct ProjectSettingsSheet: View {
         customHeight = config.height
         selectedFramerate = config.framerate
         selectedColorOption = config.backgroundColor == .black ? 0 : (config.backgroundColor == .pureWhite ? 2 : 1)
+        projectDuration = config.defaultDuration
     }
 
     private func saveChanges() {
@@ -198,7 +247,8 @@ public struct ProjectSettingsSheet: View {
             customWidth: finalW,
             customHeight: finalH,
             framerate: selectedFramerate,
-            backgroundColor: bg
+            backgroundColor: bg,
+            defaultDuration: max(5.0, projectDuration)
         )
 
         let trimmedName = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -207,7 +257,26 @@ public struct ProjectSettingsSheet: View {
         }
 
         viewModel.updateProjectConfiguration(newConfig)
+        viewModel.playbackEngine.updateTotalDuration(viewModel.project.totalDuration)
         viewModel.recordHistory(title: "Editar ajustes del proyecto", icon: "slider.horizontal.3")
+    }
+
+    @ViewBuilder
+    private func durationPresetButton(title: String, seconds: Double) -> some View {
+        Button {
+            projectDuration = seconds
+        } label: {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(abs(projectDuration - seconds) < 0.1 ? Color.primary : DesignSystem.border, lineWidth: abs(projectDuration - seconds) < 0.1 ? 1.5 : 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

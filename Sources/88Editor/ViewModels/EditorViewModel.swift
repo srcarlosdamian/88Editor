@@ -971,26 +971,72 @@ public final class EditorViewModel: ObservableObject {
     public func trimClipIn(clipId: UUID, deltaSeconds: Double) {
         for tIdx in 0..<project.tracks.count {
             if let cIdx = project.tracks[tIdx].clips.firstIndex(where: { $0.id == clipId }) {
-                let assetDur = assetsById[project.tracks[tIdx].clips[cIdx].assetId]?.duration ?? 0
+                let clip = project.tracks[tIdx].clips[cIdx]
+                let asset = assetsById[clip.assetId]
+                let isStatic = asset?.mediaType == .image || clip.textOverlay != nil || clip.shapeType != nil
+                let assetDur = isStatic ? Double.greatestFiniteMagnitude : (asset?.duration ?? 0)
                 project.tracks[tIdx].clips[cIdx].trimIn(deltaSeconds: deltaSeconds, maxAssetDuration: assetDur)
                 hasUnsavedChanges = true
+                playbackEngine.updateTotalDuration(project.totalDuration)
                 debouncedRebuildComposition()
                 break
             }
         }
     }
 
-    /// Recorte por bordes: punto Out
+    /// Recorte por bordes: punto Out (Las imágenes, textos y formas se pueden extender sin límite)
     public func trimClipOut(clipId: UUID, deltaSeconds: Double) {
         for tIdx in 0..<project.tracks.count {
             if let cIdx = project.tracks[tIdx].clips.firstIndex(where: { $0.id == clipId }) {
-                let assetDur = assetsById[project.tracks[tIdx].clips[cIdx].assetId]?.duration ?? 0
+                let clip = project.tracks[tIdx].clips[cIdx]
+                let asset = assetsById[clip.assetId]
+                let isStatic = asset?.mediaType == .image || clip.textOverlay != nil || clip.shapeType != nil
+                let assetDur = isStatic ? Double.greatestFiniteMagnitude : (asset?.duration ?? 0)
                 project.tracks[tIdx].clips[cIdx].trimOut(deltaSeconds: deltaSeconds, maxAssetDuration: assetDur)
                 hasUnsavedChanges = true
+                playbackEngine.updateTotalDuration(project.totalDuration)
                 debouncedRebuildComposition()
                 break
             }
         }
+    }
+
+    /// Ajusta numéricamente la duración de un clip (en segundos)
+    public func setClipDuration(clipId: UUID, newDuration: Double) {
+        let safeDuration = max(0.1, newDuration)
+        for tIdx in 0..<project.tracks.count {
+            if let cIdx = project.tracks[tIdx].clips.firstIndex(where: { $0.id == clipId }) {
+                let clip = project.tracks[tIdx].clips[cIdx]
+                let asset = assetsById[clip.assetId]
+                let isStatic = asset?.mediaType == .image || clip.textOverlay != nil || clip.shapeType != nil
+                let maxAllowed = isStatic ? Double.greatestFiniteMagnitude : (asset?.duration ?? Double.greatestFiniteMagnitude)
+                let finalDur = min(safeDuration, maxAllowed > 0 ? maxAllowed : Double.greatestFiniteMagnitude)
+
+                project.tracks[tIdx].clips[cIdx].duration = finalDur
+                project.tracks[tIdx].clips[cIdx].sourceOut = project.tracks[tIdx].clips[cIdx].sourceIn + finalDur
+                hasUnsavedChanges = true
+                playbackEngine.updateTotalDuration(project.totalDuration)
+                debouncedRebuildComposition()
+                recordHistory(title: "Duración de clip a \(String(format: "%.1fs", finalDur))", icon: "clock")
+                break
+            }
+        }
+    }
+
+    /// Ajusta la duración base total del proyecto (en segundos)
+    public func setProjectDuration(seconds: Double) {
+        let safe = max(5.0, seconds)
+        project.configuration.defaultDuration = safe
+        hasUnsavedChanges = true
+        playbackEngine.updateTotalDuration(project.totalDuration)
+        objectWillChange.send()
+        recordHistory(title: "Duración de proyecto a \(Int(safe))s", icon: "clock")
+    }
+
+    /// Añade segundos adicionales a la duración del proyecto
+    public func addProjectDuration(seconds: Double) {
+        let current = project.totalDuration
+        setProjectDuration(seconds: current + seconds)
     }
 
     /// Herramienta de corte: Cmd + B para dividir el clip seleccionado en la posición del playhead

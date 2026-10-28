@@ -99,13 +99,15 @@ public struct ProjectConfiguration: Codable, Equatable {
     public var height: Double
     public var framerate: FramerateOption
     public var backgroundColor: CanvasColor
+    public var defaultDuration: Double
 
     public init(
         preset: ResolutionPreset = .fullHD16x9,
         customWidth: Double? = nil,
         customHeight: Double? = nil,
         framerate: FramerateOption = .fps30,
-        backgroundColor: CanvasColor = .black
+        backgroundColor: CanvasColor = .black,
+        defaultDuration: Double = 10.0
     ) {
         self.preset = preset
         let dims = preset.defaultDimensions
@@ -113,6 +115,21 @@ public struct ProjectConfiguration: Codable, Equatable {
         self.height = customHeight ?? Double(dims.height)
         self.framerate = framerate
         self.backgroundColor = backgroundColor
+        self.defaultDuration = max(5.0, defaultDuration)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case preset, width, height, framerate, backgroundColor, defaultDuration
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.preset = try container.decodeIfPresent(ResolutionPreset.self, forKey: .preset) ?? .fullHD16x9
+        self.width = try container.decodeIfPresent(Double.self, forKey: .width) ?? 1920.0
+        self.height = try container.decodeIfPresent(Double.self, forKey: .height) ?? 1080.0
+        self.framerate = try container.decodeIfPresent(FramerateOption.self, forKey: .framerate) ?? .fps30
+        self.backgroundColor = try container.decodeIfPresent(CanvasColor.self, forKey: .backgroundColor) ?? .black
+        self.defaultDuration = try container.decodeIfPresent(Double.self, forKey: .defaultDuration) ?? 10.0
     }
 
     public var aspectRatio: Double {

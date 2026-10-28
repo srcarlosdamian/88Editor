@@ -538,9 +538,9 @@ public struct InspectorView: View {
             Divider().foregroundColor(DesignSystem.border)
         }
 
-        // 8. TEMPORIZACIÓN Y RECORTE
+        // 8. TEMPORIZACIÓN Y DURACIÓN DEL CLIP
         VStack(alignment: .leading, spacing: 8) {
-            Label("Temporización y Recorte", systemImage: "clock.arrow.2.circlepath")
+            Label("Temporización y Duración", systemImage: "clock.arrow.2.circlepath")
                 .font(.system(size: 11, weight: .bold))
 
             HStack {
@@ -553,10 +553,49 @@ public struct InspectorView: View {
                     Text("OUT").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
                     Text(String(format: "%.2f s", clip.sourceOut)).font(DesignSystem.monoFont)
                 }
-                Spacer()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("DURACIÓN").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
-                    Text(String(format: "%.2f s", clip.duration)).font(DesignSystem.monoFont)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("DURACIÓN DEL CLIP")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 6) {
+                    TextField(
+                        "Segundos",
+                        value: Binding(
+                            get: { clip.duration },
+                            set: { viewModel.setClipDuration(clipId: clip.id, newDuration: $0) }
+                        ),
+                        format: .number
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(DesignSystem.monoFont)
+                    .frame(width: 80)
+
+                    Text("segundos")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    Button("-1s") {
+                        viewModel.setClipDuration(clipId: clip.id, newDuration: max(0.1, clip.duration - 1))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+
+                    Button("+1s") {
+                        viewModel.setClipDuration(clipId: clip.id, newDuration: clip.duration + 1)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+
+                    Button("+5s") {
+                        viewModel.setClipDuration(clipId: clip.id, newDuration: clip.duration + 5)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
                 }
             }
         }
@@ -660,6 +699,73 @@ public struct InspectorView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
                 .help("Modificar dimensiones, resolución y tasa de cuadros en modal")
+            }
+
+            Divider().foregroundColor(DesignSystem.border)
+
+            // DURACIÓN Y LÍNEA DE TIEMPO
+            VStack(alignment: .leading, spacing: 8) {
+                Text("DURACIÓN DEL PROYECTO")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Text("Total actual:")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(String(format: "%.0fs (%.1f min)", viewModel.project.totalDuration, viewModel.project.totalDuration / 60.0))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                }
+
+                HStack(spacing: 6) {
+                    TextField(
+                        "Segundos",
+                        value: Binding(
+                            get: { viewModel.project.configuration.defaultDuration },
+                            set: { viewModel.setProjectDuration(seconds: $0) }
+                        ),
+                        format: .number
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(DesignSystem.monoFont)
+                    .frame(width: 70)
+
+                    Text("seg")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    Button("+5s") { viewModel.addProjectDuration(seconds: 5) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    Button("+10s") { viewModel.addProjectDuration(seconds: 10) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    Button("+30s") { viewModel.addProjectDuration(seconds: 30) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                }
+
+                // Presets rápidos de tiempo
+                HStack(spacing: 4) {
+                    Button("15s") { viewModel.setProjectDuration(seconds: 15) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    Button("30s") { viewModel.setProjectDuration(seconds: 30) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    Button("1m") { viewModel.setProjectDuration(seconds: 60) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    Button("2m") { viewModel.setProjectDuration(seconds: 120) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    Button("5m") { viewModel.setProjectDuration(seconds: 300) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                }
             }
 
             Divider().foregroundColor(DesignSystem.border)
