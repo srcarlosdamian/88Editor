@@ -1784,6 +1784,7 @@ public final class EditorViewModel: ObservableObject {
         self.historyStates = []
         self.currentHistoryIndex = 0
         self.playbackEngine.seek(to: 0.0)
+        self.playbackEngine.updateTotalDuration(self.project.totalDuration)
         self.rebuildComposition()
         self.hasUnsavedChanges = false
         self.objectWillChange.send()

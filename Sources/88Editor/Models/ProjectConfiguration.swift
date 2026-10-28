@@ -107,7 +107,7 @@ public struct ProjectConfiguration: Codable, Equatable {
         customHeight: Double? = nil,
         framerate: FramerateOption = .fps30,
         backgroundColor: CanvasColor = .black,
-        defaultDuration: Double = 10.0
+        defaultDuration: Double = 60.0
     ) {
         self.preset = preset
         let dims = preset.defaultDimensions
@@ -129,7 +129,7 @@ public struct ProjectConfiguration: Codable, Equatable {
         self.height = try container.decodeIfPresent(Double.self, forKey: .height) ?? 1080.0
         self.framerate = try container.decodeIfPresent(FramerateOption.self, forKey: .framerate) ?? .fps30
         self.backgroundColor = try container.decodeIfPresent(CanvasColor.self, forKey: .backgroundColor) ?? .black
-        self.defaultDuration = try container.decodeIfPresent(Double.self, forKey: .defaultDuration) ?? 10.0
+        self.defaultDuration = try container.decodeIfPresent(Double.self, forKey: .defaultDuration) ?? 60.0
     }
 
     public var aspectRatio: Double {

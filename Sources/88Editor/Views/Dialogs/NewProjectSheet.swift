@@ -14,6 +14,7 @@ public struct NewProjectSheet: View {
     @State private var customHeight: Double = 1080
     @State private var selectedFramerate: FramerateOption = .fps30
     @State private var selectedColorOption: Int = 0 // 0 = Negro, 1 = Carbón, 2 = Blanco
+    @State private var projectDuration: Double = 60.0 // Por defecto 1 minuto (60 segundos)
     @State private var hoveredRecentId: String? = nil
 
     public var body: some View {
@@ -214,6 +215,49 @@ public struct NewProjectSheet: View {
                                 colorOptionButton(title: "Blanco", color: .white, index: 2)
                             }
                         }
+
+                        // Duración Inicial de la Línea de Tiempo (Por defecto: 1 minuto / 60s)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Duración Inicial de la Línea de Tiempo")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Spacer()
+                                Text(String(format: "%.0fs (%.1f min)", projectDuration, projectDuration / 60.0))
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+
+                            HStack(spacing: 8) {
+                                TextField("60", value: $projectDuration, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 80)
+
+                                Text("segundos")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+
+                                Spacer()
+
+                                Button("+10s") { projectDuration += 10 }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                Button("+30s") { projectDuration += 30 }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                Button("+1m") { projectDuration += 60 }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                            }
+
+                            // Botones de presets rápidos (Por defecto 60s / 1 min seleccionado)
+                            HStack(spacing: 6) {
+                                durationPresetButton(title: "15s (Reels)", seconds: 15)
+                                durationPresetButton(title: "30s (Story)", seconds: 30)
+                                durationPresetButton(title: "60s (1 min)", seconds: 60)
+                                durationPresetButton(title: "120s (2 min)", seconds: 120)
+                                durationPresetButton(title: "300s (5 min)", seconds: 300)
+                            }
+                        }
                     }
                     .padding(.horizontal, 24)
                     .padding(.vertical, 18)
@@ -247,7 +291,7 @@ public struct NewProjectSheet: View {
             }
             .frame(width: 490)
         }
-        .frame(width: 740, height: 520)
+        .frame(width: 740, height: 580)
     }
 
     @ViewBuilder
@@ -355,6 +399,25 @@ public struct NewProjectSheet: View {
         .buttonStyle(.plain)
     }
 
+    @ViewBuilder
+    private func durationPresetButton(title: String, seconds: Double) -> some View {
+        let isSelected = abs(projectDuration - seconds) < 0.1
+        Button {
+            projectDuration = seconds
+        } label: {
+            Text(title)
+                .font(.system(size: 10, weight: isSelected ? .bold : .medium))
+                .foregroundColor(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(isSelected ? Color.white.opacity(0.85) : DesignSystem.border, lineWidth: isSelected ? 1.5 : 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
     private func createProject() {
         let baseColor: CanvasColor
         switch selectedColorOption {
@@ -368,7 +431,8 @@ public struct NewProjectSheet: View {
             customWidth: customWidth,
             customHeight: customHeight,
             framerate: selectedFramerate,
-            backgroundColor: baseColor
+            backgroundColor: baseColor,
+            defaultDuration: max(5.0, projectDuration)
         )
 
         let cleanName = projectName.isEmpty ? "Proyecto sin título" : projectName
