@@ -270,9 +270,10 @@ public final class EditorVideoCompositor: NSObject, AVVideoCompositing, @uncheck
                 }
             }
             if w > 0 && h > 0 {
-                let aspect = w / h
-                let elemH = targetH.rounded()
-                let elemW = (targetH * CGFloat(aspect)).rounded()
+                // Ajuste proporcional completo (Fit): el elemento cabe íntegro en el render sin cortarse nunca
+                let scale = min(targetW / CGFloat(w), targetH / CGFloat(h))
+                let elemW = (CGFloat(w) * scale).rounded()
+                let elemH = (CGFloat(h) * scale).rounded()
                 return (elemW, elemH)
             }
         }

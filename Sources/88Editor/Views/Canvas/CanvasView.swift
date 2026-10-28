@@ -384,10 +384,10 @@ public struct CanvasView: View {
                 }
             }
             if w > 0 && h > 0 {
-                let assetAspect = w / h
-                // SIEMPRE ajusta en altura los elementos que se agregan (100% de la altura del visor, redondeo a enteros para evitar jitter):
-                let elementH = fittedHeight.rounded()
-                let elementW = (fittedHeight * CGFloat(assetAspect)).rounded()
+                // Ajuste proporcional completo (Fit): el elemento cabe íntegro en el lienzo sin cortarse nunca
+                let scale = min(fittedWidth / CGFloat(w), fittedHeight / CGFloat(h))
+                let elementW = (CGFloat(w) * scale).rounded()
+                let elementH = (CGFloat(h) * scale).rounded()
                 return (elementW, elementH)
             }
         }

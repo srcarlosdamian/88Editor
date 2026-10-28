@@ -10,7 +10,7 @@ public struct ExportSettingsSheet: View {
     @State private var mediaType: ExportMediaType = .videoAndAudio
     @State private var container: ExportContainer = .mp4
     @State private var quality: ExportQuality = .high
-    @State private var exportRange: ExportRangeOption = .workAreaIfActive
+    @State private var exportRange: ExportRangeOption = .entireProject
 
     // Estado del reproductor de previsualización
     @State private var previewTime: Double = 0.0
@@ -205,13 +205,11 @@ public struct ExportSettingsSheet: View {
             .padding(.vertical, 13)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 780, height: 530)
+        .frame(width: 820, height: 540)
         .background(Color(NSColor.underPageBackgroundColor))
         .onAppear {
             previewTime = viewModel.playbackEngine.currentTime
-            if viewModel.project.hasCustomWorkArea {
-                exportRange = .workAreaIfActive
-            }
+            exportRange = .entireProject
         }
         .onDisappear {
             stopPreview()
@@ -278,6 +276,7 @@ public struct ExportSettingsSheet: View {
                 Text(quality.description)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
 
