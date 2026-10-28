@@ -146,6 +146,52 @@ public struct CanvasView: View {
                             viewModel.selectedClipId = nil
                             viewModel.selectedTrackId = nil
                         }
+                        .contextMenu {
+                            if viewModel.clipboardClip != nil {
+                                Button {
+                                    viewModel.pasteClipAtPlayhead()
+                                } label: {
+                                    Label("Pegar en Cabezal (⌘V)", systemImage: "doc.on.clipboard")
+                                }
+                            }
+
+                            Button {
+                                viewModel.insertSheetCategory = .text
+                                viewModel.isInsertSheetPresented = true
+                            } label: {
+                                Label("Añadir Texto (T)...", systemImage: "textformat")
+                            }
+
+                            Button {
+                                viewModel.insertSheetCategory = .shape
+                                viewModel.isInsertSheetPresented = true
+                            } label: {
+                                Label("Añadir Forma Vectorial...", systemImage: "square.on.circle")
+                            }
+
+                            Divider()
+
+                            Button {
+                                resetZoom()
+                            } label: {
+                                Label("Restablecer Vista (100% - ⌘0)", systemImage: "arrow.counterclockwise")
+                            }
+
+                            Button {
+                                viewModel.isProjectSettingsSheetPresented = true
+                            } label: {
+                                Label("Ajustes del Proyecto... (⌘,)", systemImage: "slider.horizontal.3")
+                            }
+
+                            Divider()
+
+                            Button {
+                                viewModel.selectedClipId = nil
+                                viewModel.selectedTrackId = nil
+                            } label: {
+                                Label("Deseleccionar Todo (Esc)", systemImage: "xmark.circle")
+                            }
+                        }
 
                     // Lienzo del proyecto escalable y desplazable
                     ZStack {
@@ -441,13 +487,49 @@ public struct CanvasView: View {
         }
         // Menú contextual con clic secundario en el elemento del Lienzo
         .contextMenu {
+            Button {
+                viewModel.selectedClipId = clip.id
+                viewModel.cutSelectedClip()
+            } label: {
+                Label("Cortar (⌘X)", systemImage: "scissors")
+            }
+
+            Button {
+                viewModel.selectedClipId = clip.id
+                viewModel.copySelectedClip()
+            } label: {
+                Label("Copiar (⌘C)", systemImage: "doc.on.doc")
+            }
+
+            Button {
+                viewModel.pasteClipAtPlayhead()
+            } label: {
+                Label("Pegar en Cabezal (⌘V)", systemImage: "doc.on.clipboard")
+            }
+
+            Button {
+                viewModel.selectedClipId = clip.id
+                viewModel.duplicateSelectedClip()
+            } label: {
+                Label("Duplicar en Nueva Capa (⌘D)", systemImage: "plus.square.on.square")
+            }
+
+            Button {
+                viewModel.selectedClipId = clip.id
+                viewModel.splitSelectedClipAtPlayhead()
+            } label: {
+                Label("Dividir en Cabezal (⌘B)", systemImage: "arrow.left.and.right.scissors")
+            }
+
+            Divider()
+
             if viewModel.isClipCroppable(clip) {
                 Button {
                     viewModel.selectedClipId = clip.id
                     viewModel.selectedTrackId = clip.trackId
                     viewModel.openCropModal(for: clip)
                 } label: {
-                    Label("Recortar...", systemImage: "crop")
+                    Label("Recortar imagen/video...", systemImage: "crop")
                 }
 
                 if clip.hasCrop {
@@ -468,6 +550,22 @@ public struct CanvasView: View {
 
                 Divider()
             }
+
+            Button {
+                viewModel.selectedClipId = clip.id
+                viewModel.centerClipInCanvas(clipId: clip.id)
+            } label: {
+                Label("Centrar en Lienzo", systemImage: "scope")
+            }
+
+            Button {
+                viewModel.selectedClipId = clip.id
+                viewModel.resetTransform(for: clip.id)
+            } label: {
+                Label("Restablecer Transformación", systemImage: "arrow.counterclockwise")
+            }
+
+            Divider()
 
             // Jerarquía de Capas: Subir / Bajar / Traer al Frente / Enviar al Fondo
             Menu("Orden de Capas") {
@@ -494,22 +592,6 @@ public struct CanvasView: View {
                 } label: {
                     Label("Enviar al Fondo (Capa Inferior)", systemImage: "arrow.down.to.line")
                 }
-            }
-
-            Divider()
-
-            Button {
-                viewModel.selectedClipId = clip.id
-                viewModel.splitSelectedClipAtPlayhead()
-            } label: {
-                Label("Dividir en Cabezal (⌘B)", systemImage: "scissors")
-            }
-
-            Button {
-                viewModel.selectedClipId = clip.id
-                viewModel.duplicateSelectedClip()
-            } label: {
-                Label("Duplicar en Nueva Capa (⌘D)", systemImage: "plus.square.on.square")
             }
 
             Divider()
@@ -573,6 +655,30 @@ public struct CanvasView: View {
                 .overlay(alignment: .bottomTrailing) {
                     handleCircle(corner: .bottomRight, clip: clip, baseW: baseW, baseH: baseH, dynamicScale: dynamicScale)
                         .offset(x: 5, y: 5)
+                }
+                .overlay(alignment: .top) {
+                    if viewModel.isClipCroppable(clip) {
+                        Button {
+                            viewModel.openCropModal(for: clip)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "crop")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Recortar")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.85))
+                            .cornerRadius(5)
+                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.white.opacity(0.4), lineWidth: 1))
+                            .shadow(radius: 3)
+                        }
+                        .buttonStyle(.plain)
+                        .offset(y: -28)
+                        .help("Recortar bordes de esta imagen o video")
+                    }
                 }
         }
         .offset(x: clip.positionX + liveDragTranslation.width, y: clip.positionY + liveDragTranslation.height)
@@ -682,17 +788,34 @@ public struct CanvasView: View {
 }
 
 /// Forma de recorte porcentual de bordes (Crop)
-public struct CropRectShape: Shape {
+public struct CropRectShape: Shape, Animatable {
     public var left: Double
     public var right: Double
     public var top: Double
     public var bottom: Double
 
+    public var animatableData: AnimatablePair<AnimatablePair<Double, Double>, AnimatablePair<Double, Double>> {
+        get {
+            AnimatablePair(AnimatablePair(left, right), AnimatablePair(top, bottom))
+        }
+        set {
+            left = newValue.first.first
+            right = newValue.first.second
+            top = newValue.second.first
+            bottom = newValue.second.second
+        }
+    }
+
     public func path(in rect: CGRect) -> Path {
-        let x = rect.minX + rect.width * CGFloat(max(0, min(0.48, left)))
-        let y = rect.minY + rect.height * CGFloat(max(0, min(0.48, top)))
-        let w = rect.width * CGFloat(max(0.01, 1.0 - left - right))
-        let h = rect.height * CGFloat(max(0.01, 1.0 - top - bottom))
+        let l = max(0.0, min(0.48, left))
+        let r = max(0.0, min(0.48, right))
+        let t = max(0.0, min(0.48, top))
+        let b = max(0.0, min(0.48, bottom))
+
+        let x = rect.minX + rect.width * CGFloat(l)
+        let y = rect.minY + rect.height * CGFloat(t)
+        let w = rect.width * CGFloat(max(0.01, 1.0 - l - r))
+        let h = rect.height * CGFloat(max(0.01, 1.0 - t - b))
         return Path(CGRect(x: x, y: y, width: w, height: h))
     }
 }

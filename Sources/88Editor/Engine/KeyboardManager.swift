@@ -217,9 +217,14 @@ public final class KeyboardManager: ObservableObject {
                 }
             }
 
-            // 12. COPIAR, PEGAR Y DUPLICAR CLIP (Cmd+C / Cmd+V / Cmd+D)
+            // 12. COPIAR, CORTAR, PEGAR Y DUPLICAR CLIP (Cmd+C / Cmd+X / Cmd+V / Cmd+D)
             if flags == .command {
                 switch chars {
+                case "x":
+                    if viewModel.selectedClip != nil {
+                        viewModel.cutSelectedClip()
+                        return nil
+                    }
                 case "c":
                     viewModel.copySelectedClip()
                     return nil

@@ -259,29 +259,32 @@ public struct NewProjectSheet: View {
             viewModel.loadProject(from: item.url)
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: "film.stack")
-                    .font(.system(size: 18))
-                    .foregroundColor(.secondary)
-                    .frame(width: 26)
+                // Icono nítido pixel-perfect
+                Image(systemName: "film")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(width: 24, height: 24)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(5)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(item.name)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.primary)
                         .lineLimit(1)
 
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         Text(item.relativeTime)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11, weight: .regular))
                             .foregroundColor(.secondary)
 
-                        Text("•")
-                            .font(.system(size: 8))
+                        Text("·")
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.secondary)
 
                         Text(item.displayPath)
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary.opacity(0.8))
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundColor(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -293,11 +296,33 @@ public struct NewProjectSheet: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovered ? Color(NSColor.selectedContentBackgroundColor).opacity(0.25) : Color.clear)
+                    .fill(isHovered ? Color.white.opacity(0.12) : Color.clear)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                dismiss()
+                viewModel.loadProject(from: item.url)
+            } label: {
+                Label("Abrir Proyecto", systemImage: "folder")
+            }
+
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([item.url])
+            } label: {
+                Label("Mostrar en Finder", systemImage: "arrow.up.forward.app")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                recentManager.remove(url: item.url)
+            } label: {
+                Label("Eliminar de la lista de recientes", systemImage: "trash")
+            }
+        }
         .onHover { inside in
             hoveredRecentId = inside ? item.id : nil
         }
@@ -346,7 +371,7 @@ public struct NewProjectSheet: View {
             backgroundColor: baseColor
         )
 
-        viewModel.createNewProject(with: config)
-        viewModel.project.projectName = projectName.isEmpty ? "Proyecto sin título" : projectName
+        let cleanName = projectName.isEmpty ? "Proyecto sin título" : projectName
+        viewModel.createNewProject(with: config, name: cleanName)
     }
 }

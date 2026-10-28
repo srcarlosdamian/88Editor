@@ -48,6 +48,18 @@ public struct TimelineTrack: Identifiable, Codable, Equatable {
         self.clips = clips
     }
 
+    // MARK: - Decodificación Resistente con Retrocompatibilidad Absoluta
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Capa"
+        self.kind = try container.decodeIfPresent(TrackKind.self, forKey: .kind) ?? .video
+        self.isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+        self.isLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
+        self.isHidden = try container.decodeIfPresent(Bool.self, forKey: .isHidden) ?? false
+        self.clips = try container.decodeIfPresent([TimelineClip].self, forKey: .clips) ?? []
+    }
+
     /// Duración total máxima de la pista
     public var maxDuration: Double {
         clips.map { $0.endTime }.max() ?? 0.0

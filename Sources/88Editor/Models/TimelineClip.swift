@@ -134,6 +134,50 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
         self.cropBottom = max(0.0, min(0.48, cropBottom))
     }
 
+    // MARK: - Decodificación Resistente con Retrocompatibilidad Absoluta
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.assetId = try container.decodeIfPresent(UUID.self, forKey: .assetId) ?? UUID()
+        self.trackId = try container.decodeIfPresent(UUID.self, forKey: .trackId) ?? UUID()
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Clip"
+
+        self.startTime = try container.decodeIfPresent(Double.self, forKey: .startTime) ?? 0.0
+        self.duration = try container.decodeIfPresent(Double.self, forKey: .duration) ?? 5.0
+        self.sourceIn = try container.decodeIfPresent(Double.self, forKey: .sourceIn) ?? 0.0
+        self.sourceOut = try container.decodeIfPresent(Double.self, forKey: .sourceOut) ?? (self.sourceIn + self.duration)
+
+        self.positionX = try container.decodeIfPresent(Double.self, forKey: .positionX) ?? 0.0
+        self.positionY = try container.decodeIfPresent(Double.self, forKey: .positionY) ?? 0.0
+        self.scale = try container.decodeIfPresent(Double.self, forKey: .scale) ?? 1.0
+        self.rotation = try container.decodeIfPresent(Double.self, forKey: .rotation) ?? 0.0
+
+        self.opacity = try container.decodeIfPresent(Double.self, forKey: .opacity) ?? 1.0
+        self.volume = try container.decodeIfPresent(Double.self, forKey: .volume) ?? 1.0
+        self.isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+
+        self.opacityKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .opacityKeyframes) ?? []
+        self.volumeKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .volumeKeyframes) ?? []
+        self.scaleKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .scaleKeyframes) ?? []
+        self.rotationKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .rotationKeyframes) ?? []
+
+        self.textOverlay = try container.decodeIfPresent(String.self, forKey: .textOverlay)
+        self.fontName = try container.decodeIfPresent(String.self, forKey: .fontName)
+        self.fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize)
+        self.textColorHex = try container.decodeIfPresent(String.self, forKey: .textColorHex)
+
+        self.shapeType = try container.decodeIfPresent(String.self, forKey: .shapeType)
+        self.fillColorHex = try container.decodeIfPresent(String.self, forKey: .fillColorHex)
+        self.strokeColorHex = try container.decodeIfPresent(String.self, forKey: .strokeColorHex)
+        self.strokeWidth = try container.decodeIfPresent(Double.self, forKey: .strokeWidth)
+
+        // Propiedades de recorte espacial con compatibilidad hacia atrás
+        self.cropLeft = try container.decodeIfPresent(Double.self, forKey: .cropLeft) ?? 0.0
+        self.cropRight = try container.decodeIfPresent(Double.self, forKey: .cropRight) ?? 0.0
+        self.cropTop = try container.decodeIfPresent(Double.self, forKey: .cropTop) ?? 0.0
+        self.cropBottom = try container.decodeIfPresent(Double.self, forKey: .cropBottom) ?? 0.0
+    }
+
     /// Punto final en la línea de tiempo
     public var endTime: Double {
         startTime + duration

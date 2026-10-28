@@ -9,15 +9,44 @@ public struct TimelineTrackView: View {
     let timelineWidth: CGFloat
 
     @State private var isDropTargeted: Bool = false
+    @State private var isHeaderDropTargeted: Bool = false
     @State private var isEditingName: Bool = false
     @State private var tempName: String = ""
+    @State private var isDraggingHeader: Bool = false
+    @State private var headerDragDeltaY: CGFloat = 0
 
     public var body: some View {
         let currentHeight = viewModel.trackHeight
 
         HStack(spacing: 0) {
-            // Cabecera lateral de la capa (160px con nombre editable)
-            HStack(spacing: 6) {
+            // Cabecera lateral de la capa (160px con icono de arrastre y controles)
+            HStack(spacing: 4) {
+                // Tirador de arrastre para reordenar la capa arriba / abajo con el ratón
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(isDraggingHeader ? .primary : .secondary.opacity(0.55))
+                    .frame(width: 16, height: currentHeight)
+                    .contentShape(Rectangle())
+                    .help("Arrastrar capa hacia arriba o hacia abajo para reordenar")
+                    .gesture(
+                        DragGesture()
+                            .onChanged { val in
+                                isDraggingHeader = true
+                                headerDragDeltaY = val.translation.height
+                                if headerDragDeltaY <= -currentHeight * 0.65 {
+                                    viewModel.moveTrackUp(id: track.id)
+                                    headerDragDeltaY = 0
+                                } else if headerDragDeltaY >= currentHeight * 0.65 {
+                                    viewModel.moveTrackDown(id: track.id)
+                                    headerDragDeltaY = 0
+                                }
+                            }
+                            .onEnded { _ in
+                                isDraggingHeader = false
+                                headerDragDeltaY = 0
+                            }
+                    )
+
                 // Etiqueta con nombre de la capa (Doble clic o clic derecho para renombrar)
                 if isEditingName {
                     TextField("Capa...", text: $tempName)
@@ -27,7 +56,7 @@ public struct TimelineTrackView: View {
                         .padding(.vertical, 2)
                         .background(Color(NSColor.textBackgroundColor))
                         .cornerRadius(4)
-                        .frame(maxWidth: 80)
+                        .frame(maxWidth: 74)
                         .onSubmit {
                             viewModel.renameTrack(id: track.id, newName: tempName)
                             isEditingName = false
@@ -39,11 +68,11 @@ public struct TimelineTrackView: View {
                         .foregroundColor(.primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .padding(.horizontal, 5)
+                        .padding(.horizontal, 4)
                         .padding(.vertical, 2)
                         .background(Color.primary.opacity(0.12))
                         .cornerRadius(4)
-                        .frame(maxWidth: 82, alignment: .leading)
+                        .frame(maxWidth: 74, alignment: .leading)
                         .onTapGesture(count: 2) {
                             tempName = track.name
                             isEditingName = true
@@ -52,7 +81,7 @@ public struct TimelineTrackView: View {
                 }
 
                 Image(systemName: track.kind.iconName)
-                    .font(.system(size: 10))
+                    .font(.system(size: 9))
                     .foregroundColor(.secondary)
 
                 Spacer()
@@ -62,7 +91,7 @@ public struct TimelineTrackView: View {
                     viewModel.toggleHideTrack(id: track.id)
                 } label: {
                     Image(systemName: track.isHidden ? "eye.slash.fill" : "eye.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 9))
                         .foregroundColor(track.isHidden ? .primary.opacity(0.35) : .secondary)
                 }
                 .buttonStyle(.plain)
@@ -73,7 +102,7 @@ public struct TimelineTrackView: View {
                     viewModel.toggleMuteTrack(id: track.id)
                 } label: {
                     Image(systemName: track.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 9))
                         .foregroundColor(track.isMuted ? .primary.opacity(0.35) : .secondary)
                 }
                 .buttonStyle(.plain)
@@ -84,7 +113,7 @@ public struct TimelineTrackView: View {
                     viewModel.toggleLockTrack(id: track.id)
                 } label: {
                     Image(systemName: track.isLocked ? "lock.fill" : "lock.open")
-                        .font(.system(size: 10))
+                        .font(.system(size: 9))
                         .foregroundColor(track.isLocked ? .primary : .secondary.opacity(0.4))
                 }
                 .buttonStyle(.plain)
@@ -112,11 +141,34 @@ public struct TimelineTrackView: View {
                     .buttonStyle(.plain)
                     .help("Bajar capa (enviar atrás)")
                 }
-                .padding(.leading, 2)
+                .padding(.leading, 1)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
             .frame(width: 160, height: currentHeight)
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(
+                isHeaderDropTargeted
+                    ? Color.white.opacity(0.18)
+                    : (isDraggingHeader ? Color(NSColor.selectedContentBackgroundColor).opacity(0.2) : Color(NSColor.controlBackgroundColor))
+            )
+            .offset(y: headerDragDeltaY)
+            .zIndex(isDraggingHeader ? 99 : 1)
+            .shadow(color: Color.black.opacity(isDraggingHeader ? 0.4 : 0), radius: 6, x: 0, y: 3)
+            .onDrag {
+                NSItemProvider(object: "track:\(track.id.uuidString)" as NSString)
+            }
+            .onDrop(of: [UTType.plainText.identifier], isTargeted: $isHeaderDropTargeted) { providers in
+                guard let provider = providers.first else { return false }
+                provider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
+                    if let rawStr = item as? String ?? (item as? Data).flatMap({ String(data: $0, encoding: .utf8) }),
+                       rawStr.hasPrefix("track:"),
+                       let draggedUUID = UUID(uuidString: String(rawStr.dropFirst(6))) {
+                        DispatchQueue.main.async {
+                            viewModel.reorderTrack(fromId: draggedUUID, toTargetId: track.id)
+                        }
+                    }
+                }
+                return true
+            }
             .contextMenu {
                 Button {
                     viewModel.bringTrackToFront(id: track.id)
@@ -174,6 +226,79 @@ public struct TimelineTrackView: View {
                         viewModel.selectedClipId = nil
                         viewModel.selectedTrackId = track.id
                     }
+                    .contextMenu {
+                        if viewModel.clipboardClip != nil {
+                            Button {
+                                viewModel.pasteClipAtPlayhead(targetTrackId: track.id)
+                            } label: {
+                                Label("Pegar en Cabezal (⌘V)", systemImage: "doc.on.clipboard")
+                            }
+                        }
+
+                        Button {
+                            viewModel.splitSelectedClipAtPlayhead()
+                        } label: {
+                            Label("Dividir en Cabezal (⌘B)", systemImage: "scissors")
+                        }
+
+                        Divider()
+
+                        Button {
+                            viewModel.insertSheetCategory = .text
+                            viewModel.isInsertSheetPresented = true
+                        } label: {
+                            Label("Añadir Capa de Texto...", systemImage: "textformat")
+                        }
+
+                        Button {
+                            viewModel.insertSheetCategory = .shape
+                            viewModel.isInsertSheetPresented = true
+                        } label: {
+                            Label("Añadir Capa de Forma...", systemImage: "square.on.circle")
+                        }
+
+                        Divider()
+
+                        Menu("Orden de Capas") {
+                            Button {
+                                viewModel.bringTrackToFront(id: track.id)
+                            } label: {
+                                Label("Traer al Frente (Capa Superior)", systemImage: "arrow.up.to.line")
+                            }
+
+                            Button {
+                                viewModel.moveTrackUp(id: track.id)
+                            } label: {
+                                Label("Subir Capa (Traer adelante)", systemImage: "arrow.up")
+                            }
+
+                            Button {
+                                viewModel.moveTrackDown(id: track.id)
+                            } label: {
+                                Label("Bajar Capa (Enviar atrás)", systemImage: "arrow.down")
+                            }
+
+                            Button {
+                                viewModel.sendTrackToBack(id: track.id)
+                            } label: {
+                                Label("Enviar al Fondo (Capa Inferior)", systemImage: "arrow.down.to.line")
+                            }
+                        }
+
+                        Button {
+                            viewModel.duplicateTrack(id: track.id)
+                        } label: {
+                            Label("Duplicar Capa Completa", systemImage: "plus.square.on.square")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            viewModel.deleteTrack(id: track.id)
+                        } label: {
+                            Label("Eliminar Capa", systemImage: "trash")
+                        }
+                    }
 
                 // Línea inferior divisoria
                 Rectangle()
@@ -222,6 +347,9 @@ public struct TimelineTrackView: View {
                         onDuplicate: {
                             viewModel.duplicateClip(id: clip.id)
                         },
+                        onCut: {
+                            viewModel.cutClip(id: clip.id)
+                        },
                         onCopy: {
                             viewModel.selectedClipId = clip.id
                             viewModel.copySelectedClip()
@@ -260,6 +388,24 @@ public struct TimelineTrackView: View {
                                 $0.cropBottom = 0.0
                             }
                             viewModel.recordHistory(title: "Restablecer recorte", icon: "crop")
+                        },
+                        onResetTransform: {
+                            viewModel.resetTransform(for: clip.id)
+                        },
+                        onCenterInCanvas: {
+                            viewModel.centerClipInCanvas(clipId: clip.id)
+                        },
+                        onMoveTrackUp: {
+                            viewModel.moveTrackUp(id: track.id)
+                        },
+                        onMoveTrackDown: {
+                            viewModel.moveTrackDown(id: track.id)
+                        },
+                        onBringToFront: {
+                            viewModel.bringTrackToFront(id: track.id)
+                        },
+                        onSendToBack: {
+                            viewModel.sendTrackToBack(id: track.id)
                         }
                     )
                 }

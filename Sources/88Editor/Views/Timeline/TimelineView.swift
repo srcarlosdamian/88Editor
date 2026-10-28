@@ -261,6 +261,20 @@ public struct TimelineView: View {
                     .buttonStyle(.plain)
                     .help("Aumentar zoom temporal del timeline")
                 }
+
+                // Control interactivo de Altura de Capas (32px a 200px)
+                HStack(spacing: 5) {
+                    Image(systemName: "rectangle.split.3x1")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .help("Altura de las capas")
+
+                    Slider(value: $viewModel.trackHeight, in: 32...200)
+                        .frame(width: 80)
+                        .controlSize(.mini)
+                        .tint(.secondary)
+                        .help("Ajustar altura de las capas (\(Int(viewModel.trackHeight))px)")
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -350,6 +364,9 @@ public struct TimelineView: View {
                                         },
                                         onSetWorkAreaOut: { newOut in
                                             viewModel.setWorkAreaOut(to: newOut)
+                                        },
+                                        onShiftWorkArea: { delta in
+                                            viewModel.shiftWorkArea(by: delta)
                                         },
                                         onResetWorkArea: {
                                             viewModel.resetWorkArea()

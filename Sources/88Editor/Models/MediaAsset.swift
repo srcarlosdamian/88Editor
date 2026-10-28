@@ -69,6 +69,21 @@ public struct MediaAsset: Identifiable, Codable, Equatable {
         self.dateAdded = dateAdded
     }
 
+    // MARK: - Decodificación Resistente con Retrocompatibilidad Absoluta
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.fileName = try container.decodeIfPresent(String.self, forKey: .fileName) ?? "Archivo"
+        self.fileURL = try container.decodeIfPresent(URL.self, forKey: .fileURL) ?? URL(fileURLWithPath: "/")
+        self.bookmarkData = try container.decodeIfPresent(Data.self, forKey: .bookmarkData)
+        self.mediaType = try container.decodeIfPresent(MediaType.self, forKey: .mediaType) ?? .video
+        self.duration = try container.decodeIfPresent(Double.self, forKey: .duration) ?? 0.0
+        self.width = try container.decodeIfPresent(Double.self, forKey: .width) ?? 0.0
+        self.height = try container.decodeIfPresent(Double.self, forKey: .height) ?? 0.0
+        self.fileSize = try container.decodeIfPresent(Int64.self, forKey: .fileSize) ?? 0
+        self.dateAdded = try container.decodeIfPresent(Date.self, forKey: .dateAdded) ?? Date()
+    }
+
     public var isDiskFile: Bool {
         return mediaType == .video || mediaType == .audio || mediaType == .image
     }

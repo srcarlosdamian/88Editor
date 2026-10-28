@@ -52,6 +52,34 @@ public struct EditorMenuCommands: Commands {
             .keyboardShortcut(",", modifiers: [.command])
         }
 
+        CommandGroup(replacing: .pasteboard) {
+            Button("Cortar") {
+                NotificationCenter.default.post(name: .cutClipAction, object: nil)
+            }
+            .keyboardShortcut("x", modifiers: [.command])
+
+            Button("Copiar") {
+                NotificationCenter.default.post(name: .copyClipAction, object: nil)
+            }
+            .keyboardShortcut("c", modifiers: [.command])
+
+            Button("Pegar") {
+                NotificationCenter.default.post(name: .pasteClipAction, object: nil)
+            }
+            .keyboardShortcut("v", modifiers: [.command])
+
+            Button("Duplicar") {
+                NotificationCenter.default.post(name: .duplicateClipAction, object: nil)
+            }
+            .keyboardShortcut("d", modifiers: [.command])
+
+            Divider()
+
+            Button("Eliminar") {
+                NotificationCenter.default.post(name: .deleteClipAction, object: nil)
+            }
+        }
+
         CommandGroup(replacing: .undoRedo) {
             Button("Deshacer") {
                 NotificationCenter.default.post(name: .undoAction, object: nil)
@@ -110,6 +138,11 @@ public extension Notification.Name {
     static let promptImportMedia = Notification.Name("88Editor.promptImportMedia")
     static let promptExportRender = Notification.Name("88Editor.promptExportRender")
     static let promptProjectSettings = Notification.Name("88Editor.promptProjectSettings")
+    static let cutClipAction = Notification.Name("88Editor.cutClipAction")
+    static let copyClipAction = Notification.Name("88Editor.copyClipAction")
+    static let pasteClipAction = Notification.Name("88Editor.pasteClipAction")
+    static let duplicateClipAction = Notification.Name("88Editor.duplicateClipAction")
+    static let deleteClipAction = Notification.Name("88Editor.deleteClipAction")
     static let splitClipAtPlayhead = Notification.Name("88Editor.splitClipAtPlayhead")
     static let togglePlayback = Notification.Name("88Editor.togglePlayback")
     static let undoAction = Notification.Name("88Editor.undoAction")

@@ -23,6 +23,7 @@ public struct TimelineClipView: View {
     let onTrimIn: (Double) -> Void
     let onTrimOut: (Double) -> Void
     let onDuplicate: () -> Void
+    var onCut: (() -> Void)? = nil
     var onCopy: (() -> Void)? = nil
     var onPaste: (() -> Void)? = nil
     let onSplit: () -> Void
@@ -32,6 +33,12 @@ public struct TimelineClipView: View {
     var onReconnect: (() -> Void)? = nil
     var onCrop: (() -> Void)? = nil
     var onResetCrop: (() -> Void)? = nil
+    var onResetTransform: (() -> Void)? = nil
+    var onCenterInCanvas: (() -> Void)? = nil
+    var onMoveTrackUp: (() -> Void)? = nil
+    var onMoveTrackDown: (() -> Void)? = nil
+    var onBringToFront: (() -> Void)? = nil
+    var onSendToBack: (() -> Void)? = nil
 
     @State private var dragOffsetX: CGFloat = 0
     @State private var dragOffsetY: CGFloat = 0
@@ -188,8 +195,14 @@ public struct TimelineClipView: View {
         .opacity(isDragging ? 0.88 : 1.0)
         .shadow(color: Color.black.opacity(isDragging ? 0.5 : (isSelected ? 0.25 : 0)), radius: isDragging ? 10 : 3, x: 0, y: isDragging ? 5 : 1)
         // Gesto unificado: selección instantánea al hacer clic y arrastre temporal / vertical
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                onSelect()
+                NSApp.keyWindow?.makeFirstResponder(nil)
+            }
+        )
         .gesture(
-            DragGesture(minimumDistance: 0)
+            DragGesture(minimumDistance: 3)
                 .onChanged { value in
                     if !isSelected {
                         onSelect()
@@ -226,40 +239,112 @@ public struct TimelineClipView: View {
                     dragOffsetY = 0
                 }
         )
-        // Menú contextual con clic derecho
+        // Menú contextual con clic derecho completo
         .contextMenu {
-            if isMissing {
-                Button {
-                    onReconnect?()
-                } label: {
-                    Label("Reconectar o reemplazar archivo original...", systemImage: "arrow.triangle.2.circlepath")
-                }
-                Divider()
+            Button {
+                onSelect()
+                onCut?()
+            } label: {
+                Label("Cortar (⌘X)", systemImage: "scissors")
             }
+
+            Button {
+                onSelect()
+                onCopy?()
+            } label: {
+                Label("Copiar (⌘C)", systemImage: "doc.on.doc")
+            }
+
+            Button {
+                onSelect()
+                onPaste?()
+            } label: {
+                Label("Pegar en cabezal (⌘V)", systemImage: "doc.on.clipboard")
+            }
+
+            Button {
+                onSelect()
+                onDuplicate()
+            } label: {
+                Label("Duplicar en nueva capa (⌘D)", systemImage: "plus.square.on.square")
+            }
+
+            Button {
+                onSelect()
+                onSplit()
+            } label: {
+                Label("Dividir en cabezal (⌘B)", systemImage: "scissors")
+            }
+
+            Divider()
 
             if !isAudioTrack {
                 Button {
+                    onSelect()
                     onCrop?()
                 } label: {
-                    Label("Recortar imagen/video...", systemImage: "crop")
+                    Label("Recortar...", systemImage: "crop")
                 }
 
                 if clip.hasCrop {
                     Button {
+                        onSelect()
                         onResetCrop?()
                     } label: {
                         Label("Restablecer Recorte", systemImage: "arrow.counterclockwise")
                     }
                 }
 
+                Button {
+                    onSelect()
+                    onCenterInCanvas?()
+                } label: {
+                    Label("Centrar en Lienzo", systemImage: "scope")
+                }
+
+                Button {
+                    onSelect()
+                    onResetTransform?()
+                } label: {
+                    Label("Restablecer Transformación", systemImage: "arrow.counterclockwise")
+                }
+
                 Divider()
+            }
+
+            Menu("Orden de Capas") {
+                Button {
+                    onSelect()
+                    onBringToFront?()
+                } label: {
+                    Label("Traer al Frente (Capa Superior)", systemImage: "arrow.up.to.line")
+                }
+                Button {
+                    onSelect()
+                    onMoveTrackUp?()
+                } label: {
+                    Label("Subir Capa (Traer adelante)", systemImage: "arrow.up")
+                }
+                Button {
+                    onSelect()
+                    onMoveTrackDown?()
+                } label: {
+                    Label("Bajar Capa (Enviar atrás)", systemImage: "arrow.down")
+                }
+                Button {
+                    onSelect()
+                    onSendToBack?()
+                } label: {
+                    Label("Enviar al Fondo (Capa Inferior)", systemImage: "arrow.down.to.line")
+                }
             }
 
             let compatibleTracks = availableTracks.filter { $0.kind == currentTrack.kind && $0.id != currentTrack.id }
             if !compatibleTracks.isEmpty {
-                Menu("Mover a otra pista") {
+                Menu("Mover a otra capa existente") {
                     ForEach(compatibleTracks) { targetTrack in
-                        Button("Pista \(targetTrack.name)") {
+                        Button(targetTrack.name) {
+                            onSelect()
                             onMoveToSpecificTrack(targetTrack.id)
                         }
                     }
@@ -267,38 +352,26 @@ public struct TimelineClipView: View {
             }
 
             Button {
-                onCopy?()
-            } label: {
-                Label("Copiar clip (⌘C)", systemImage: "doc.on.doc")
-            }
-
-            Button {
-                onDuplicate()
-            } label: {
-                Label("Duplicar clip (⌘D)", systemImage: "plus.square.on.square")
-            }
-
-            Button {
-                onPaste?()
-            } label: {
-                Label("Pegar clip (⌘V)", systemImage: "doc.on.clipboard")
-            }
-
-            Button {
-                onSplit()
-            } label: {
-                Label("Dividir en cabezal (⌘B)", systemImage: "scissors")
-            }
-
-            Button {
+                onSelect()
                 onToggleMute()
             } label: {
                 Label(clip.isMuted ? "Activar audio" : "Silenciar clip (M)", systemImage: clip.isMuted ? "speaker.wave.2" : "speaker.slash")
             }
 
+            if isMissing {
+                Divider()
+                Button {
+                    onSelect()
+                    onReconnect?()
+                } label: {
+                    Label("Reconectar o reemplazar archivo original...", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+
             Divider()
 
             Button(role: .destructive) {
+                onSelect()
                 onDelete()
             } label: {
                 Label("Eliminar clip (Delete)", systemImage: "trash")

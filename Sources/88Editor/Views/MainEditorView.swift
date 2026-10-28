@@ -25,7 +25,6 @@ public struct MainEditorView: View {
             // Panel Superior Responsivo: 3 Columnas
             GeometryReader { geo in
                 HStack(spacing: 0) {
-                    // Columna 1: Media Pool / Galería de Medios (Colapsable)
                     if showLeftSidebar {
                         let leftWidth = max(220, min(280, geo.size.width * 0.22))
                         MediaPoolView(viewModel: viewModel)
@@ -37,12 +36,10 @@ public struct MainEditorView: View {
                             .frame(width: 1)
                     }
 
-                    // Columna 2: Canvas Central de Previsualización (Ocupa todo el espacio restante)
                     CanvasView(viewModel: viewModel)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipped()
 
-                    // Columna 3: Inspector Contextual (Colapsable)
                     if showRightSidebar {
                         Rectangle()
                             .fill(DesignSystem.border)
@@ -57,30 +54,7 @@ public struct MainEditorView: View {
             }
 
             // Divisor interactivo con cursor de redimensionamiento vertical para el Timeline
-            ZStack {
-                Rectangle()
-                    .fill(DesignSystem.border)
-                    .frame(height: 5)
-
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(Color.secondary.opacity(0.4))
-                    .frame(width: 36, height: 2)
-            }
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.resizeUpDown.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .gesture(
-                DragGesture()
-                    .onChanged { val in
-                        let proposed = timelineHeight - val.translation.height
-                        timelineHeight = min(max(proposed, 140), 500)
-                    }
-            )
+            timelineResizeHandle
 
             // Panel Inferior: Línea de Tiempo Multicapa (Altura adaptable)
             TimelineView(viewModel: viewModel)
@@ -89,7 +63,6 @@ public struct MainEditorView: View {
         .background(Color(NSColor.windowBackgroundColor))
         .animation(.easeInOut(duration: 0.18), value: showLeftSidebar)
         .animation(.easeInOut(duration: 0.18), value: showRightSidebar)
-        // Inicializar monitoreo de atajos de teclado globales y evitar autofoco indebido en el buscador
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
@@ -111,98 +84,207 @@ public struct MainEditorView: View {
         .onDisappear {
             keyboardManager.stopMonitoring()
         }
-        // Conexión con comandos del Menú superior de macOS
-        .onReceive(NotificationCenter.default.publisher(for: .promptNewProject)) { _ in
-            viewModel.isNewProjectSheetPresented = true
+        .overlay(alignment: .top) {
+            toastOverlay
         }
-        .onReceive(NotificationCenter.default.publisher(for: .promptOpenProject)) { _ in
-            viewModel.promptOpenProjectPanel()
+        .modifier(EditorProjectNotificationHandler(viewModel: viewModel))
+        .modifier(EditorClipNotificationHandler(viewModel: viewModel))
+        .modifier(EditorPlaybackNotificationHandler(viewModel: viewModel))
+        .modifier(EditorSheetsHandler(viewModel: viewModel))
+    }
+
+    private var timelineResizeHandle: some View {
+        ZStack {
+            Rectangle()
+                .fill(DesignSystem.border)
+                .frame(height: 5)
+
+            RoundedRectangle(cornerRadius: 1)
+                .fill(Color.secondary.opacity(0.4))
+                .frame(width: 36, height: 2)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .promptSaveProject)) { _ in
-            viewModel.saveProject()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .promptSaveProjectAs)) { _ in
-            viewModel.promptSavePanel()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .promptImportMedia)) { _ in
-            viewModel.promptImportMediaPanel()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .promptExportRender)) { _ in
-            viewModel.promptExportRenderPanel()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .promptProjectSettings)) { _ in
-            viewModel.isProjectSettingsSheetPresented = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .splitClipAtPlayhead)) { _ in
-            viewModel.splitSelectedClipAtPlayhead()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .togglePlayback)) { _ in
-            viewModel.playbackEngine.togglePlayPause()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .undoAction)) { _ in
-            viewModel.undo()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .redoAction)) { _ in
-            viewModel.redo()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openRecentProjectURL)) { notif in
-            if let url = notif.object as? URL {
-                viewModel.loadProject(from: url)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if hovering {
+                NSCursor.resizeUpDown.push()
+            } else {
+                NSCursor.pop()
             }
         }
-        // Modal inicial de proyecto
-        .sheet(isPresented: $viewModel.isNewProjectSheetPresented) {
-            NewProjectSheet(viewModel: viewModel)
-        }
-        // Modal de edición de ajustes y tamaño del proyecto
-        .sheet(isPresented: $viewModel.isProjectSettingsSheetPresented) {
-            ProjectSettingsSheet(viewModel: viewModel)
-        }
-        // Modal de configuración versátil de exportación (presets, calidad, contenedor, peso)
-        .sheet(isPresented: $viewModel.isExportSettingsSheetPresented) {
-            ExportSettingsSheet(viewModel: viewModel)
-        }
-        // Modal de progreso de renderizado
-        .sheet(isPresented: $viewModel.isExportSheetPresented) {
-            ExportRenderSheet(viewModel: viewModel)
-        }
-        // Modal interactivo de recorte espacial de bordes (Crop)
-        .sheet(isPresented: $viewModel.isCropSheetPresented) {
-            if let clip = viewModel.clipBeingCropped {
-                CropSheet(viewModel: viewModel, clip: clip)
+        .gesture(
+            DragGesture()
+                .onChanged { val in
+                    let proposed = timelineHeight - val.translation.height
+                    timelineHeight = min(max(proposed, 140), 500)
+                }
+        )
+    }
+
+    @ViewBuilder
+    private var toastOverlay: some View {
+        if let toastMsg = viewModel.notificationToastMessage {
+            HStack(spacing: 8) {
+                Image(systemName: viewModel.notificationToastIcon)
+                    .foregroundColor(.primary)
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text(toastMsg)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+
+                Button {
+                    viewModel.notificationToastMessage = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 4)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.35), radius: 8, x: 0, y: 4)
+            .padding(.top, 42)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .zIndex(999)
         }
-        // Modal de selección de fuentes nativas (NSFontManager)
-        .sheet(isPresented: $viewModel.isFontPickerPresented) {
-            FontPickerSheet(viewModel: viewModel)
-        }
-        // Modal de inserción de texto y formas vectoriales
-        .sheet(isPresented: $viewModel.isInsertSheetPresented) {
-            InsertItemSheet(viewModel: viewModel, initialCategory: viewModel.insertSheetCategory)
-        }
-        // Alerta nativa de cambios sin guardar
-        .alert("Cambios sin guardar", isPresented: $viewModel.showUnsavedChangesAlert) {
-            Button("Guardar y Continuar") {
+    }
+}
+
+// MARK: - Manejadores modulares para evitar saturar el verificador de tipos de Swift
+private struct EditorProjectNotificationHandler: ViewModifier {
+    @ObservedObject var viewModel: EditorViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .promptNewProject)) { _ in
+                viewModel.isNewProjectSheetPresented = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .promptOpenProject)) { _ in
+                viewModel.promptOpenProjectPanel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .promptSaveProject)) { _ in
                 viewModel.saveProject()
-                viewModel.pendingActionAfterAlert?()
-                viewModel.pendingActionAfterAlert = nil
             }
-            Button("Descartar Cambios", role: .destructive) {
-                viewModel.hasUnsavedChanges = false
-                viewModel.pendingActionAfterAlert?()
-                viewModel.pendingActionAfterAlert = nil
+            .onReceive(NotificationCenter.default.publisher(for: .promptSaveProjectAs)) { _ in
+                viewModel.promptSavePanel()
             }
-            Button("Cancelar", role: .cancel) {
-                viewModel.pendingActionAfterAlert = nil
+            .onReceive(NotificationCenter.default.publisher(for: .promptImportMedia)) { _ in
+                viewModel.promptImportMediaPanel()
             }
-        } message: {
-            Text("El proyecto actual '\(viewModel.project.projectName)' tiene cambios sin guardar. Si continúas sin guardar, perderás las modificaciones recientes.")
-        }
-        // Alerta de formato no compatible (ej. MKV)
-        .alert("Formato no compatible", isPresented: $viewModel.showUnsupportedFormatAlert) {
-            Button("Entendido", role: .cancel) {}
-        } message: {
-            Text(viewModel.unsupportedFormatAlertMessage ?? "El formato del archivo no es compatible con AVFoundation en macOS.")
-        }
+            .onReceive(NotificationCenter.default.publisher(for: .promptExportRender)) { _ in
+                viewModel.promptExportRenderPanel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .promptProjectSettings)) { _ in
+                viewModel.isProjectSettingsSheetPresented = true
+            }
+    }
+}
+
+private struct EditorClipNotificationHandler: ViewModifier {
+    @ObservedObject var viewModel: EditorViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .cutClipAction)) { _ in
+                viewModel.cutSelectedClip()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .copyClipAction)) { _ in
+                viewModel.copySelectedClip()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .pasteClipAction)) { _ in
+                viewModel.pasteClipAtPlayhead()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .duplicateClipAction)) { _ in
+                viewModel.duplicateSelectedClip()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .deleteClipAction)) { _ in
+                viewModel.deleteSelectedClip()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .splitClipAtPlayhead)) { _ in
+                viewModel.splitSelectedClipAtPlayhead()
+            }
+    }
+}
+
+private struct EditorPlaybackNotificationHandler: ViewModifier {
+    @ObservedObject var viewModel: EditorViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .togglePlayback)) { _ in
+                viewModel.playbackEngine.togglePlayPause()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .undoAction)) { _ in
+                viewModel.undo()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .redoAction)) { _ in
+                viewModel.redo()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openRecentProjectURL)) { notif in
+                if let url = notif.object as? URL {
+                    viewModel.loadProject(from: url)
+                }
+            }
+    }
+}
+
+private struct EditorSheetsHandler: ViewModifier {
+    @ObservedObject var viewModel: EditorViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $viewModel.isNewProjectSheetPresented) {
+                NewProjectSheet(viewModel: viewModel)
+            }
+            .sheet(isPresented: $viewModel.isProjectSettingsSheetPresented) {
+                ProjectSettingsSheet(viewModel: viewModel)
+            }
+            .sheet(isPresented: $viewModel.isExportSettingsSheetPresented) {
+                ExportSettingsSheet(viewModel: viewModel)
+            }
+            .sheet(isPresented: $viewModel.isExportSheetPresented) {
+                ExportRenderSheet(viewModel: viewModel)
+            }
+            .sheet(isPresented: $viewModel.isCropSheetPresented) {
+                if let clip = viewModel.clipBeingCropped {
+                    CropSheet(viewModel: viewModel, clip: clip)
+                }
+            }
+            .sheet(isPresented: $viewModel.isFontPickerPresented) {
+                FontPickerSheet(viewModel: viewModel)
+            }
+            .sheet(isPresented: $viewModel.isInsertSheetPresented) {
+                InsertItemSheet(viewModel: viewModel, initialCategory: viewModel.insertSheetCategory)
+            }
+            .alert("Cambios sin guardar", isPresented: $viewModel.showUnsavedChangesAlert) {
+                Button("Guardar y Continuar") {
+                    viewModel.saveProject()
+                    viewModel.pendingActionAfterAlert?()
+                    viewModel.pendingActionAfterAlert = nil
+                }
+                Button("Descartar Cambios", role: .destructive) {
+                    viewModel.hasUnsavedChanges = false
+                    viewModel.pendingActionAfterAlert?()
+                    viewModel.pendingActionAfterAlert = nil
+                }
+                Button("Cancelar", role: .cancel) {
+                    viewModel.pendingActionAfterAlert = nil
+                }
+            } message: {
+                Text("El proyecto actual '\(viewModel.project.projectName)' tiene cambios sin guardar. Si continúas sin guardar, perderás las modificaciones recientes.")
+            }
+            .alert("Formato no compatible", isPresented: $viewModel.showUnsupportedFormatAlert) {
+                Button("Entendido", role: .cancel) {}
+            } message: {
+                Text(viewModel.unsupportedFormatAlertMessage ?? "El formato del archivo no es compatible con AVFoundation en macOS.")
+            }
     }
 }

@@ -45,6 +45,23 @@ public struct ProjectDocument: Identifiable, Codable, Equatable {
         self.workAreaOut = workAreaOut
     }
 
+    // MARK: - Decodificación Resistente con Retrocompatibilidad Absoluta
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.version = try container.decodeIfPresent(String.self, forKey: .version) ?? "1.0"
+        self.projectName = try container.decodeIfPresent(String.self, forKey: .projectName) ?? "Proyecto"
+        self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        self.modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? Date()
+        self.configuration = try container.decodeIfPresent(ProjectConfiguration.self, forKey: .configuration) ?? ProjectConfiguration()
+        self.assets = try container.decodeIfPresent([MediaAsset].self, forKey: .assets) ?? []
+        self.tracks = try container.decodeIfPresent([TimelineTrack].self, forKey: .tracks) ?? []
+        self.savedHistory = try container.decodeIfPresent([HistoryState].self, forKey: .savedHistory)
+        self.savedHistoryIndex = try container.decodeIfPresent(Int.self, forKey: .savedHistoryIndex)
+        self.workAreaIn = try container.decodeIfPresent(Double.self, forKey: .workAreaIn)
+        self.workAreaOut = try container.decodeIfPresent(Double.self, forKey: .workAreaOut)
+    }
+
     /// Duración total del proyecto calculada a partir del clip más lejano
     public var totalDuration: Double {
         let maxTime = tracks.flatMap { $0.clips }.map { $0.endTime }.max() ?? 0.0

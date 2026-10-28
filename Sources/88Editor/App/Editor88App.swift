@@ -41,4 +41,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
     }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let vm = EditorViewModel.activeInstance else { return .terminateNow }
+
+        if vm.hasMeaningfulWork {
+            let alert = NSAlert()
+            alert.messageText = "¿Deseas guardar los cambios en '\(vm.project.projectName)' antes de salir?"
+            alert.informativeText = "Si sales sin guardar, se perderán las ediciones recientes."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Guardar y Salir")
+            alert.addButton(withTitle: "No Guardar")
+            alert.addButton(withTitle: "Cancelar")
+
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn: // Guardar y Salir
+                vm.saveProject()
+                if vm.hasUnsavedChanges {
+                    return .terminateCancel
+                }
+                return .terminateNow
+            case .alertSecondButtonReturn: // No Guardar
+                return .terminateNow
+            default: // Cancelar
+                return .terminateCancel
+            }
+        }
+        return .terminateNow
+    }
 }

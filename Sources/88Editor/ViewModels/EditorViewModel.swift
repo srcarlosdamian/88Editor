@@ -22,6 +22,7 @@ public enum RightSidebarTab: String, CaseIterable, Identifiable {
 /// Coordina la línea de tiempo, el Media Pool, el Inspector Contextual y el motor de reproducción.
 @MainActor
 public final class EditorViewModel: ObservableObject {
+    public static weak var activeInstance: EditorViewModel?
 
     // MARK: - Estado del Proyecto
     @Published public var project: ProjectDocument
@@ -52,6 +53,23 @@ public final class EditorViewModel: ObservableObject {
     @Published public var showUnsupportedFormatAlert: Bool = false
     @Published public var isCropSheetPresented: Bool = false
     @Published public var clipBeingCropped: TimelineClip? = nil
+
+    // Mensaje de notificación Toast en la interfaz (ej. archivo ya existente importado)
+    @Published public var notificationToastMessage: String? = nil
+    @Published public var notificationToastIcon: String = "info.circle"
+    private var toastTimer: Timer?
+
+    public func showNotificationToast(message: String, icon: String = "info.circle") {
+        notificationToastMessage = message
+        notificationToastIcon = icon
+        toastTimer?.invalidate()
+        toastTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.notificationToastMessage = nil
+            }
+        }
+        objectWillChange.send()
+    }
 
     // Zoom de la línea de tiempo (píxeles por segundo: 15px a 400px)
     @Published public var timelineZoom: Double = 60.0
@@ -111,6 +129,7 @@ public final class EditorViewModel: ObservableObject {
 
     public init(initialConfiguration: ProjectConfiguration = ProjectConfiguration()) {
         self.project = ProjectDocument(configuration: initialConfiguration)
+        Self.activeInstance = self
         loadSystemFonts()
         setupEngineObservers()
         startAutosaveTimer()
@@ -351,6 +370,30 @@ public final class EditorViewModel: ObservableObject {
         recordHistory(title: "Restablecer rango de renderizado", icon: "arrow.counterclockwise")
     }
 
+    /// Desplaza el rango completo In-Out libremente a lo largo de la línea de tiempo manteniendo su duración
+    public func shiftWorkArea(by deltaSeconds: Double) {
+        let currentIn = project.effectiveRenderIn
+        let currentOut = project.effectiveRenderOut
+        let span = currentOut - currentIn
+        var newIn = currentIn + deltaSeconds
+        var newOut = currentOut + deltaSeconds
+
+        if newIn < 0 {
+            newIn = 0
+            newOut = span
+        }
+        let total = max(project.totalDuration, span)
+        if newOut > total {
+            newOut = total
+            newIn = max(0, newOut - span)
+        }
+
+        project.workAreaIn = newIn
+        project.workAreaOut = newOut
+        hasUnsavedChanges = true
+        objectWillChange.send()
+    }
+
     // MARK: - Mutación Segura de Clip Seleccionado
     public func updateSelectedClip(_ mutate: (inout TimelineClip) -> Void) {
         guard let id = selectedClipId else { return }
@@ -472,6 +515,11 @@ public final class EditorViewModel: ObservableObject {
                 $0.fileURL.path == url.path
             }) {
                 self.selectedAssetId = existing.id
+                self.selectedClipId = nil
+                self.showNotificationToast(
+                    message: "El archivo '\(existing.fileName)' ya está en la galería (seleccionado)",
+                    icon: "checkmark.circle"
+                )
                 continue
             }
 
@@ -1032,13 +1080,71 @@ public final class EditorViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Portapapeles y Operaciones de Clip (Copiar, Pegar, Duplicar)
+    // MARK: - Portapapeles y Operaciones de Clip (Copiar, Cortar, Pegar, Duplicar)
     public var clipboardClip: TimelineClip? = nil
 
     /// Copia el clip seleccionado al portapapeles interno (⌘C)
     public func copySelectedClip() {
         guard let clip = selectedClip else { return }
         self.clipboardClip = clip
+    }
+
+    /// Corta el clip seleccionado copiándolo y eliminándolo (⌘X)
+    public func cutSelectedClip() {
+        guard let clip = selectedClip else { return }
+        self.clipboardClip = clip
+        deleteSelectedClip()
+        recordHistory(title: "Cortar elemento", icon: "scissors")
+    }
+
+    /// Corta un clip específico por ID
+    public func cutClip(id: UUID) {
+        selectedClipId = id
+        cutSelectedClip()
+    }
+
+    /// Copia un clip específico por ID
+    public func copyClip(id: UUID) {
+        for track in project.tracks {
+            if let clip = track.clips.first(where: { $0.id == id }) {
+                self.clipboardClip = clip
+                self.selectedClipId = id
+                self.selectedTrackId = track.id
+                return
+            }
+        }
+    }
+
+    /// Restablece posición, escala y rotación a valores por defecto
+    public func resetTransform(for clipId: UUID) {
+        for tIdx in 0..<project.tracks.count {
+            if let cIdx = project.tracks[tIdx].clips.firstIndex(where: { $0.id == clipId }) {
+                project.tracks[tIdx].clips[cIdx].positionX = 0
+                project.tracks[tIdx].clips[cIdx].positionY = 0
+                project.tracks[tIdx].clips[cIdx].scale = 1.0
+                project.tracks[tIdx].clips[cIdx].rotation = 0.0
+                hasUnsavedChanges = true
+                recordHistory(title: "Restablecer transformación", icon: "arrow.counterclockwise")
+                debouncedRebuildComposition()
+                objectWillChange.send()
+                return
+            }
+        }
+    }
+
+    /// Centra un elemento en el lienzo (X: 0, Y: 0)
+    public func centerClipInCanvas(clipId: UUID) {
+        for tIdx in 0..<project.tracks.count {
+            if let cIdx = project.tracks[tIdx].clips.firstIndex(where: { $0.id == clipId }) {
+                project.tracks[tIdx].clips[cIdx].positionX = 0
+                project.tracks[tIdx].clips[cIdx].positionY = 0
+                hasUnsavedChanges = true
+                recordHistory(title: "Centrar en lienzo", icon: "scope")
+                debouncedRebuildComposition()
+                objectWillChange.send()
+                return
+            }
+        }
     }
 
     /// Pega el clip del portapapeles creando SIEMPRE una nueva capa/línea dedicada para él (⌘V)
@@ -1155,6 +1261,27 @@ public final class EditorViewModel: ObservableObject {
         objectWillChange.send()
     }
 
+    /// Reordena una capa arrastrada soltándola sobre otra posición (Drag and Drop de capas)
+    public func reorderTrack(fromId: UUID, toTargetId: UUID) {
+        guard fromId != toTargetId,
+              let fromIdx = project.tracks.firstIndex(where: { $0.id == fromId }),
+              let targetIdx = project.tracks.firstIndex(where: { $0.id == toTargetId }) else { return }
+
+        let movedTrack = project.tracks.remove(at: fromIdx)
+        project.tracks.insert(movedTrack, at: targetIdx)
+        selectedTrackId = fromId
+        hasUnsavedChanges = true
+        recordHistory(title: "Reordenar capa con ratón", icon: "arrow.up.and.down")
+        debouncedRebuildComposition()
+        objectWillChange.send()
+    }
+
+    /// Ajusta la altura de las capas libremente (permite hacerlas mucho más grandes si es necesario)
+    public func adjustTrackHeight(delta: CGFloat) {
+        trackHeight = min(220.0, max(32.0, trackHeight + delta))
+        objectWillChange.send()
+    }
+
     // MARK: - Fotogramas Clave (Keyframes)
     public func isKeyframeActive(for property: AnimatableProperty) -> Bool {
         guard let clip = selectedClip else { return false }
@@ -1223,6 +1350,7 @@ public final class EditorViewModel: ObservableObject {
         currentHistoryIndex = historyStates.count - 1
         hasUnsavedChanges = true
         autosaveStatusMessage = "Cambios sin guardar"
+        scheduleAutosave()
     }
 
     public func jumpToHistoryState(at index: Int) {
@@ -1391,10 +1519,21 @@ public final class EditorViewModel: ObservableObject {
         return autosaveDirectoryURL.appendingPathComponent("autosave_\(safeName).88proj")
     }
 
+    private var debouncedAutosaveTask: Task<Void, Never>?
+
+    public func scheduleAutosave() {
+        debouncedAutosaveTask?.cancel()
+        debouncedAutosaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 segundos tras última edición
+            guard !Task.isCancelled else { return }
+            self.performPeriodicAutosave()
+        }
+    }
+
     public func startAutosaveTimer() {
         autosaveTimer?.invalidate()
-        // Ejecución periódica cada 30 segundos
-        autosaveTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        // Ejecución periódica cada 10 segundos
+        autosaveTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.performPeriodicAutosave()
             }
@@ -1411,19 +1550,22 @@ public final class EditorViewModel: ObservableObject {
             autosaveDoc.savedHistoryIndex = currentHistoryIndex
             let data = try autosaveDoc.serialize()
 
+            let timeStr = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)
+
             // 1. Si el usuario ya asignó una ruta de archivo (.88proj), autoguardar directamente
             if let dest = currentProjectURL {
                 try data.write(to: dest, options: .atomic)
                 self.hasUnsavedChanges = false
                 self.lastSavedTimestamp = Date()
-                self.autosaveStatusMessage = "Autoguardado"
+                self.autosaveStatusMessage = "Autoguardado (\(timeStr))"
                 print("[88 Editor] Autoguardado periódico completado en \(dest.lastPathComponent)")
             } else {
                 // 2. Si es un proyecto nuevo sin guardar, respaldar en Autosave Directory
                 let backupURL = self.autosaveBackupURL
                 try data.write(to: backupURL, options: .atomic)
                 self.lastSavedTimestamp = Date()
-                self.autosaveStatusMessage = "Copia temporal guardada"
+                self.hasUnsavedChanges = false
+                self.autosaveStatusMessage = "Borrador respaldado (\(timeStr))"
                 print("[88 Editor] Copia de seguridad temporal autoguardada en \(backupURL.path)")
             }
             objectWillChange.send()
@@ -1582,15 +1724,23 @@ public final class EditorViewModel: ObservableObject {
     }
 
     // MARK: - Nuevo Proyecto
-    public func createNewProject(with configuration: ProjectConfiguration) {
-        checkUnsavedChangesBeforeAction {
-            self.project = ProjectDocument(configuration: configuration)
-            self.currentProjectURL = nil
-            self.hasUnsavedChanges = false
-            self.selectedClipId = nil
-            self.playbackEngine.seek(to: 0.0)
-            self.rebuildComposition()
+    public func createNewProject(with configuration: ProjectConfiguration, name: String? = nil) {
+        // Inicialización directa de un proyecto nuevo limpio
+        self.project = ProjectDocument(configuration: configuration)
+        if let name = name, !name.isEmpty {
+            self.project.projectName = name
         }
+        self.currentProjectURL = nil
+        self.hasUnsavedChanges = false
+        self.selectedClipId = nil
+        self.selectedTrackId = nil
+        self.selectedAssetId = nil
+        self.historyStates = []
+        self.currentHistoryIndex = 0
+        self.playbackEngine.seek(to: 0.0)
+        self.rebuildComposition()
+        self.hasUnsavedChanges = false
+        self.objectWillChange.send()
     }
 
     public func updateProjectConfiguration(_ newConfig: ProjectConfiguration) {
@@ -1741,11 +1891,20 @@ public final class EditorViewModel: ObservableObject {
         isExportSheetPresented = false
     }
 
+    // MARK: - Comprobación Inteligente de Trabajo sin Guardar
+    public var hasMeaningfulWork: Bool {
+        if currentProjectURL != nil && hasUnsavedChanges { return true }
+        let hasClips = project.tracks.contains(where: { !$0.clips.isEmpty })
+        let hasAssets = !project.assets.isEmpty
+        return hasUnsavedChanges && (hasClips || hasAssets)
+    }
+
     public func checkUnsavedChangesBeforeAction(action: @escaping () -> Void) {
-        if hasUnsavedChanges {
+        if hasMeaningfulWork {
             pendingActionAfterAlert = action
             showUnsavedChangesAlert = true
         } else {
+            hasUnsavedChanges = false
             action()
         }
     }

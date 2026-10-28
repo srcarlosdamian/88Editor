@@ -10,14 +10,11 @@ public struct TimelineRulerView: View {
     let onSeek: (Double) -> Void
     var onSetWorkAreaIn: ((Double) -> Void)? = nil
     var onSetWorkAreaOut: ((Double) -> Void)? = nil
+    var onShiftWorkArea: ((Double) -> Void)? = nil
     var onResetWorkArea: (() -> Void)? = nil
 
-    @State private var draggingHandle: WorkAreaHandle? = nil
-
-    private enum WorkAreaHandle {
-        case inPoint
-        case outPoint
-    }
+    @State private var dragInitialIn: Double? = nil
+    @State private var dragInitialOut: Double? = nil
 
     public init(
         duration: Double,
@@ -27,6 +24,7 @@ public struct TimelineRulerView: View {
         onSeek: @escaping (Double) -> Void,
         onSetWorkAreaIn: ((Double) -> Void)? = nil,
         onSetWorkAreaOut: ((Double) -> Void)? = nil,
+        onShiftWorkArea: ((Double) -> Void)? = nil,
         onResetWorkArea: (() -> Void)? = nil
     ) {
         self.duration = duration
@@ -36,6 +34,7 @@ public struct TimelineRulerView: View {
         self.onSeek = onSeek
         self.onSetWorkAreaIn = onSetWorkAreaIn
         self.onSetWorkAreaOut = onSetWorkAreaOut
+        self.onShiftWorkArea = onShiftWorkArea
         self.onResetWorkArea = onResetWorkArea
     }
 
@@ -44,31 +43,26 @@ public struct TimelineRulerView: View {
             let totalWidth = max(geo.size.width, CGFloat(duration) * CGFloat(zoom))
             let totalSeconds = Int(ceil(Double(totalWidth) / zoom))
 
+            // Por defecto abarca todo el canvas/timeline, y se mueve libremente con el mouse
             let effIn = max(0.0, workAreaIn ?? 0.0)
-            let effOut = min(duration, workAreaOut ?? duration)
+            let effOut = max(effIn + 0.1, min(duration, workAreaOut ?? duration))
             let inX = CGFloat(effIn) * CGFloat(zoom)
             let outX = CGFloat(effOut) * CGFloat(zoom)
-            let hasCustomArea = workAreaIn != nil || workAreaOut != nil
+            let barWidth = max(4, outX - inX)
 
             ZStack(alignment: .bottomLeading) {
-                // Fondo base de la regla
+                // 1. Fondo base de la regla con clic para mover el cabezal (Seek)
                 Color(NSColor.controlBackgroundColor)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                let clickedTime = max(0, Double(value.location.x) / zoom)
+                                onSeek(clickedTime)
+                            }
+                    )
 
-                // Resaltado de la franja del Área de Trabajo / Rango de Renderizado
-                if hasCustomArea && outX > inX {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(width: max(2, outX - inX), height: 26)
-                        .position(x: inX + (outX - inX) / 2, y: 13)
-
-                    // Barra superior indicadora de rango de renderizado
-                    Rectangle()
-                        .fill(Color.white.opacity(0.75))
-                        .frame(width: max(2, outX - inX), height: 3)
-                        .position(x: inX + (outX - inX) / 2, y: 1.5)
-                }
-
-                // Marcas de tiempo y números
+                // 2. Marcas de tiempo y números
                 ForEach(0...totalSeconds, id: \.self) { second in
                     let xPos = CGFloat(second) * CGFloat(zoom)
 
@@ -89,75 +83,93 @@ public struct TimelineRulerView: View {
                         }
                     }
                     .position(x: xPos, y: 12)
+                    .allowsHitTesting(false)
                 }
 
-                // Tirador / Corchete Izquierdo (Punto In)
-                if hasCustomArea {
-                    WorkAreaBracketShape(isLeft: true)
-                        .fill(Color.white.opacity(0.85))
-                        .frame(width: 8, height: 16)
-                        .position(x: inX + 4, y: 13)
-                        .shadow(color: Color.black.opacity(0.4), radius: 1, x: 0, y: 1)
-                        .gesture(
-                            DragGesture()
-                                .onChanged { val in
-                                    let newTime = max(0, Double(val.location.x) / zoom)
-                                    onSetWorkAreaIn?(newTime)
-                                }
-                        )
+                // 3. Franja sombreada del Área de Trabajo (Arrastrable para mover el bloque completo)
+                if outX > inX {
+                    ZStack(alignment: .top) {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.14))
+                            .frame(width: barWidth, height: 26)
 
-                    // Tirador / Corchete Derecho (Punto Out)
-                    WorkAreaBracketShape(isLeft: false)
-                        .fill(Color.white.opacity(0.85))
-                        .frame(width: 8, height: 16)
-                        .position(x: outX - 4, y: 13)
-                        .shadow(color: Color.black.opacity(0.4), radius: 1, x: 0, y: 1)
-                        .gesture(
-                            DragGesture()
-                                .onChanged { val in
-                                    let newTime = max(effIn + 0.1, Double(val.location.x) / zoom)
-                                    onSetWorkAreaOut?(newTime)
-                                }
-                        )
+                        // Barra superior horizontal que une los corchetes
+                        Rectangle()
+                            .fill(Color.white.opacity(0.90))
+                            .frame(width: barWidth, height: 3.5)
+                    }
+                    .position(x: inX + barWidth / 2, y: 13)
+                    .contentShape(Rectangle())
+                    .help("Arrastrar para desplazar el rango completo In-Out")
+                    .gesture(
+                        DragGesture()
+                            .onChanged { val in
+                                let delta = Double(val.translation.width) / zoom
+                                onShiftWorkArea?(delta)
+                            }
+                    )
                 }
+
+                // 4. Corchete Izquierdo (Punto In `[`) - Movible libremente con el mouse
+                WorkAreaBracketShape(isLeft: true)
+                    .fill(Color.white)
+                    .frame(width: 9, height: 18)
+                    .position(x: inX + 4.5, y: 13)
+                    .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
+                    .contentShape(Rectangle().inset(by: -6))
+                    .help("Punto In: Arrastrar para ajustar inicio del corte")
+                    .zIndex(10)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { val in
+                                let newTime = max(0, min(effOut - 0.1, Double(val.location.x) / zoom))
+                                onSetWorkAreaIn?(newTime)
+                            }
+                    )
+
+                // 5. Corchete Derecho (Punto Out `]`) - Movible libremente con el mouse
+                WorkAreaBracketShape(isLeft: false)
+                    .fill(Color.white)
+                    .frame(width: 9, height: 18)
+                    .position(x: outX - 4.5, y: 13)
+                    .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
+                    .contentShape(Rectangle().inset(by: -6))
+                    .help("Punto Out: Arrastrar para ajustar final del corte")
+                    .zIndex(10)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { val in
+                                let newTime = max(effIn + 0.1, min(duration, Double(val.location.x) / zoom))
+                                onSetWorkAreaOut?(newTime)
+                            }
+                    )
 
                 // Línea inferior divisoria
                 Rectangle()
                     .fill(DesignSystem.border)
                     .frame(height: 1)
+                    .allowsHitTesting(false)
             }
             .frame(width: totalWidth, height: 26)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let clickedTime = max(0, Double(value.location.x) / zoom)
-                        onSeek(clickedTime)
-                    }
-            )
             .contextMenu {
                 Button {
-                    let clickedTime = max(0, Double(inX) / zoom)
-                    onSetWorkAreaIn?(clickedTime)
+                    onSetWorkAreaIn?(effIn)
                 } label: {
                     Label("Fijar Punto de Entrada aquí (I)", systemImage: "arrow.right.to.line")
                 }
 
                 Button {
-                    let clickedTime = max(0, Double(outX) / zoom)
-                    onSetWorkAreaOut?(clickedTime)
+                    onSetWorkAreaOut?(effOut)
                 } label: {
                     Label("Fijar Punto de Salida aquí (O)", systemImage: "arrow.left.to.line")
                 }
 
-                if hasCustomArea {
-                    Divider()
+                Divider()
 
-                    Button {
-                        onResetWorkArea?()
-                    } label: {
-                        Label("Restablecer Rango de Renderizado (⌥X)", systemImage: "arrow.counterclockwise")
-                    }
+                Button {
+                    onResetWorkArea?()
+                } label: {
+                    Label("Abarcar Duración Completa (⌥X)", systemImage: "arrow.counterclockwise")
                 }
             }
         }
