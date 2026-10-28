@@ -13,6 +13,10 @@ public struct ProjectDocument: Identifiable, Codable, Equatable {
     public var savedHistory: [HistoryState]?
     public var savedHistoryIndex: Int?
 
+    // Herramienta de Área de Trabajo y Rango de Renderizado (In / Out)
+    public var workAreaIn: Double?
+    public var workAreaOut: Double?
+
     public init(
         id: UUID = UUID(),
         version: String = "1.0",
@@ -23,7 +27,9 @@ public struct ProjectDocument: Identifiable, Codable, Equatable {
         assets: [MediaAsset] = [],
         tracks: [TimelineTrack] = [],
         savedHistory: [HistoryState]? = nil,
-        savedHistoryIndex: Int? = nil
+        savedHistoryIndex: Int? = nil,
+        workAreaIn: Double? = nil,
+        workAreaOut: Double? = nil
     ) {
         self.id = id
         self.version = version
@@ -35,12 +41,37 @@ public struct ProjectDocument: Identifiable, Codable, Equatable {
         self.tracks = tracks
         self.savedHistory = savedHistory
         self.savedHistoryIndex = savedHistoryIndex
+        self.workAreaIn = workAreaIn
+        self.workAreaOut = workAreaOut
     }
 
     /// Duración total del proyecto calculada a partir del clip más lejano
     public var totalDuration: Double {
         let maxTime = tracks.flatMap { $0.clips }.map { $0.endTime }.max() ?? 0.0
         return max(maxTime, 5.0) // Al menos 5 segundos de lienzo visible
+    }
+
+    /// Punto de inicio efectivo para el renderizado / área de trabajo (por defecto 0.0s)
+    public var effectiveRenderIn: Double {
+        return max(0.0, workAreaIn ?? 0.0)
+    }
+
+    /// Punto de finalización efectivo para el renderizado / área de trabajo
+    public var effectiveRenderOut: Double {
+        if let out = workAreaOut, out > effectiveRenderIn {
+            return min(out, totalDuration)
+        }
+        return totalDuration
+    }
+
+    /// Duración efectiva del renderizado / corte de área de trabajo
+    public var effectiveRenderDuration: Double {
+        return max(0.1, effectiveRenderOut - effectiveRenderIn)
+    }
+
+    /// Indica si el usuario ha delimitado un rango de renderizado específico
+    public var hasCustomWorkArea: Bool {
+        return workAreaIn != nil || workAreaOut != nil
     }
 
     /// Codifica el proyecto a Data en formato JSON formateado

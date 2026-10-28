@@ -30,6 +30,8 @@ public struct TimelineClipView: View {
     let onDelete: () -> Void
     var isMissing: Bool = false
     var onReconnect: (() -> Void)? = nil
+    var onCrop: (() -> Void)? = nil
+    var onResetCrop: (() -> Void)? = nil
 
     @State private var dragOffsetX: CGFloat = 0
     @State private var dragOffsetY: CGFloat = 0
@@ -232,6 +234,24 @@ public struct TimelineClipView: View {
                 } label: {
                     Label("Reconectar o reemplazar archivo original...", systemImage: "arrow.triangle.2.circlepath")
                 }
+                Divider()
+            }
+
+            if !isAudioTrack {
+                Button {
+                    onCrop?()
+                } label: {
+                    Label("Recortar imagen/video...", systemImage: "crop")
+                }
+
+                if clip.hasCrop {
+                    Button {
+                        onResetCrop?()
+                    } label: {
+                        Label("Restablecer Recorte", systemImage: "arrow.counterclockwise")
+                    }
+                }
+
                 Divider()
             }
 

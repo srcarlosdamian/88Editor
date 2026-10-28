@@ -16,6 +16,10 @@ public struct EditorMenuCommands: Commands {
             }
             .keyboardShortcut("o", modifiers: [.command])
 
+            Menu("Abrir Recientes") {
+                RecentProjectsMenuView()
+            }
+
             Divider()
 
             Button("Guardar Proyecto") {
@@ -76,6 +80,28 @@ public struct EditorMenuCommands: Commands {
     }
 }
 
+public struct RecentProjectsMenuView: View {
+    @ObservedObject var manager = RecentProjectsManager.shared
+
+    public init() {}
+
+    public var body: some View {
+        if manager.recentProjects.isEmpty {
+            Text("No hay proyectos recientes")
+        } else {
+            ForEach(manager.recentProjects) { item in
+                Button(item.name) {
+                    NotificationCenter.default.post(name: .openRecentProjectURL, object: item.url)
+                }
+            }
+            Divider()
+            Button("Borrar menú de recientes") {
+                manager.clear()
+            }
+        }
+    }
+}
+
 public extension Notification.Name {
     static let promptNewProject = Notification.Name("88Editor.promptNewProject")
     static let promptOpenProject = Notification.Name("88Editor.promptOpenProject")
@@ -88,4 +114,5 @@ public extension Notification.Name {
     static let togglePlayback = Notification.Name("88Editor.togglePlayback")
     static let undoAction = Notification.Name("88Editor.undoAction")
     static let redoAction = Notification.Name("88Editor.redoAction")
+    static let openRecentProjectURL = Notification.Name("88Editor.openRecentProjectURL")
 }

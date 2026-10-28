@@ -145,6 +145,11 @@ public struct MainEditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: .redoAction)) { _ in
             viewModel.redo()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openRecentProjectURL)) { notif in
+            if let url = notif.object as? URL {
+                viewModel.loadProject(from: url)
+            }
+        }
         // Modal inicial de proyecto
         .sheet(isPresented: $viewModel.isNewProjectSheetPresented) {
             NewProjectSheet(viewModel: viewModel)
@@ -153,9 +158,19 @@ public struct MainEditorView: View {
         .sheet(isPresented: $viewModel.isProjectSettingsSheetPresented) {
             ProjectSettingsSheet(viewModel: viewModel)
         }
-        // Modal de exportación y renderizado
+        // Modal de configuración versátil de exportación (presets, calidad, contenedor, peso)
+        .sheet(isPresented: $viewModel.isExportSettingsSheetPresented) {
+            ExportSettingsSheet(viewModel: viewModel)
+        }
+        // Modal de progreso de renderizado
         .sheet(isPresented: $viewModel.isExportSheetPresented) {
             ExportRenderSheet(viewModel: viewModel)
+        }
+        // Modal interactivo de recorte espacial de bordes (Crop)
+        .sheet(isPresented: $viewModel.isCropSheetPresented) {
+            if let clip = viewModel.clipBeingCropped {
+                CropSheet(viewModel: viewModel, clip: clip)
+            }
         }
         // Modal de selección de fuentes nativas (NSFontManager)
         .sheet(isPresented: $viewModel.isFontPickerPresented) {

@@ -58,6 +58,16 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
     public var strokeColorHex: String?
     public var strokeWidth: Double?
 
+    // Recorte espacial (Crop en porcentajes: 0.0 a 0.5)
+    public var cropLeft: Double
+    public var cropRight: Double
+    public var cropTop: Double
+    public var cropBottom: Double
+
+    public var hasCrop: Bool {
+        cropLeft > 0.001 || cropRight > 0.001 || cropTop > 0.001 || cropBottom > 0.001
+    }
+
     public init(
         id: UUID = UUID(),
         assetId: UUID,
@@ -85,7 +95,11 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
         shapeType: String? = nil,
         fillColorHex: String? = nil,
         strokeColorHex: String? = nil,
-        strokeWidth: Double? = nil
+        strokeWidth: Double? = nil,
+        cropLeft: Double = 0.0,
+        cropRight: Double = 0.0,
+        cropTop: Double = 0.0,
+        cropBottom: Double = 0.0
     ) {
         self.id = id
         self.assetId = assetId
@@ -114,6 +128,10 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
         self.fillColorHex = fillColorHex ?? "#FF3B30"
         self.strokeColorHex = strokeColorHex
         self.strokeWidth = strokeWidth ?? 0.0
+        self.cropLeft = max(0.0, min(0.48, cropLeft))
+        self.cropRight = max(0.0, min(0.48, cropRight))
+        self.cropTop = max(0.0, min(0.48, cropTop))
+        self.cropBottom = max(0.0, min(0.48, cropBottom))
     }
 
     /// Punto final en la línea de tiempo
@@ -262,7 +280,16 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
             rotationKeyframes: rotationKeyframes.filter { $0.seconds > firstDuration }.map { Keyframe(seconds: $0.seconds - firstDuration, value: $0.value) },
             textOverlay: self.textOverlay,
             fontName: self.fontName,
-            fontSize: self.fontSize
+            fontSize: self.fontSize,
+            textColorHex: self.textColorHex,
+            shapeType: self.shapeType,
+            fillColorHex: self.fillColorHex,
+            strokeColorHex: self.strokeColorHex,
+            strokeWidth: self.strokeWidth,
+            cropLeft: self.cropLeft,
+            cropRight: self.cropRight,
+            cropTop: self.cropTop,
+            cropBottom: self.cropBottom
         )
         return (firstClip, secondClip)
     }

@@ -39,6 +39,7 @@ public final class EditorViewModel: ObservableObject {
     // MARK: - UI & Modales
     @Published public var isNewProjectSheetPresented: Bool = true // Solicitar nombre al inicio
     @Published public var isProjectSettingsSheetPresented: Bool = false
+    @Published public var isExportSettingsSheetPresented: Bool = false
     @Published public var isExportSheetPresented: Bool = false
     @Published public var exportProgress: Double = 0.0
     @Published public var exportStatusMessage: String = "Preparando render..."
@@ -49,6 +50,8 @@ public final class EditorViewModel: ObservableObject {
     @Published public var pendingActionAfterAlert: (() -> Void)?
     @Published public var unsupportedFormatAlertMessage: String?
     @Published public var showUnsupportedFormatAlert: Bool = false
+    @Published public var isCropSheetPresented: Bool = false
+    @Published public var clipBeingCropped: TimelineClip? = nil
 
     // Zoom de la línea de tiempo (píxeles por segundo: 15px a 400px)
     @Published public var timelineZoom: Double = 60.0
@@ -233,6 +236,119 @@ public final class EditorViewModel: ObservableObject {
             return track.kind == .video
         }
         return false
+    }
+
+    /// Determina si un clip es estrictamente audio (sin componente visual)
+    public func isClipAudioOnly(_ clip: TimelineClip) -> Bool {
+        if clip.shapeType != nil || (clip.textOverlay != nil && !clip.textOverlay!.isEmpty) {
+            return false
+        }
+        if let asset = assetsById[clip.assetId] {
+            return asset.mediaType == .audio
+        }
+        if let track = project.tracks.first(where: { $0.id == clip.trackId }) {
+            return track.kind == .audio
+        }
+        return false
+    }
+
+    /// Determina si un clip dispone de pista o canal de audio (audio directo o video con audio)
+    public func clipHasAudio(_ clip: TimelineClip) -> Bool {
+        if let track = project.tracks.first(where: { $0.id == clip.trackId }), track.kind == .audio {
+            return true
+        }
+        if let asset = assetsById[clip.assetId] {
+            return asset.mediaType == .audio || asset.mediaType == .video
+        }
+        return false
+    }
+
+    /// Determina si un clip es susceptible de recorte espacial de bordes (imágenes o videos)
+    public func isClipCroppable(_ clip: TimelineClip) -> Bool {
+        if clip.shapeType != nil || (clip.textOverlay != nil && !clip.textOverlay!.isEmpty) {
+            return false
+        }
+        if let asset = assetsById[clip.assetId] {
+            return asset.mediaType == .video || asset.mediaType == .image
+        }
+        if let track = project.tracks.first(where: { $0.id == clip.trackId }), track.kind == .video {
+            return clip.shapeType == nil && clip.textOverlay == nil
+        }
+        return false
+    }
+
+    // MARK: - Recorte Espacial de Imágenes y Videos (Crop)
+    public func openCropModal(for clip: TimelineClip) {
+        clipBeingCropped = clip
+        isCropSheetPresented = true
+    }
+
+    public func applyCrop(clipId: UUID, left: Double, right: Double, top: Double, bottom: Double) {
+        for (trackIndex, track) in project.tracks.enumerated() {
+            if let clipIndex = track.clips.firstIndex(where: { $0.id == clipId }) {
+                project.tracks[trackIndex].clips[clipIndex].cropLeft = max(0, min(0.48, left))
+                project.tracks[trackIndex].clips[clipIndex].cropRight = max(0, min(0.48, right))
+                project.tracks[trackIndex].clips[clipIndex].cropTop = max(0, min(0.48, top))
+                project.tracks[trackIndex].clips[clipIndex].cropBottom = max(0, min(0.48, bottom))
+                hasUnsavedChanges = true
+                objectWillChange.send()
+                recordHistory(title: "Recortar imagen/video", icon: "crop")
+                debouncedRebuildComposition()
+                return
+            }
+        }
+    }
+
+    // MARK: - Área de Trabajo y Rango de Renderizado (In / Out del Timeline)
+    /// Fija el punto de entrada (In) del área de trabajo al cabezal actual (Atajo: tecla I)
+    public func setWorkAreaInAtPlayhead() {
+        let t = max(0.0, playbackEngine.currentTime)
+        if let out = project.workAreaOut, t >= out {
+            project.workAreaOut = min(project.totalDuration, t + 1.0)
+        }
+        project.workAreaIn = t
+        hasUnsavedChanges = true
+        objectWillChange.send()
+        recordHistory(title: "Marcar punto de entrada (In)", icon: "arrow.right.to.line")
+    }
+
+    /// Fija el punto de salida (Out) del área de trabajo al cabezal actual (Atajo: tecla O)
+    public func setWorkAreaOutAtPlayhead() {
+        let t = max(0.1, playbackEngine.currentTime)
+        if let inTime = project.workAreaIn, t <= inTime {
+            project.workAreaIn = max(0.0, t - 1.0)
+        }
+        project.workAreaOut = t
+        hasUnsavedChanges = true
+        objectWillChange.send()
+        recordHistory(title: "Marcar punto de salida (Out)", icon: "arrow.left.to.line")
+    }
+
+    /// Ajusta numéricamente o por arrastre el punto In del área de trabajo
+    public func setWorkAreaIn(to time: Double) {
+        let t = max(0.0, time)
+        let effectiveMax = project.effectiveRenderOut - 0.2
+        project.workAreaIn = min(t, effectiveMax)
+        hasUnsavedChanges = true
+        objectWillChange.send()
+    }
+
+    /// Ajusta numéricamente o por arrastre el punto Out del área de trabajo
+    public func setWorkAreaOut(to time: Double) {
+        let effectiveMin = project.effectiveRenderIn + 0.2
+        let t = max(effectiveMin, min(time, project.totalDuration))
+        project.workAreaOut = t
+        hasUnsavedChanges = true
+        objectWillChange.send()
+    }
+
+    /// Restablece el rango de renderizado a la duración completa del proyecto (Atajo: Option+X)
+    public func resetWorkArea() {
+        project.workAreaIn = nil
+        project.workAreaOut = nil
+        hasUnsavedChanges = true
+        objectWillChange.send()
+        recordHistory(title: "Restablecer rango de renderizado", icon: "arrow.counterclockwise")
     }
 
     // MARK: - Mutación Segura de Clip Seleccionado
@@ -522,7 +638,8 @@ public final class EditorViewModel: ObservableObject {
         )
         project.assets.append(asset)
 
-        let targetTrack = TimelineTrack(name: assetName, kind: .video)
+        let layerNumber = project.tracks.count + 1
+        let targetTrack = TimelineTrack(name: "Capa \(layerNumber) - \(assetName)", kind: .video)
         project.tracks.insert(targetTrack, at: 0) // Capa superior en la jerarquía (el elemento de arriba manda)
 
         let clip = TimelineClip(
@@ -539,6 +656,7 @@ public final class EditorViewModel: ObservableObject {
 
         project.tracks[0].clips.append(clip)
         selectedClipId = clip.id
+        selectedTrackId = targetTrack.id
         hasUnsavedChanges = true
         debouncedRebuildComposition()
         recordHistory(title: "Insertar Texto Vectorial", icon: "character.textbox")
@@ -567,7 +685,8 @@ public final class EditorViewModel: ObservableObject {
         )
         project.assets.append(asset)
 
-        let targetTrack = TimelineTrack(name: assetName, kind: .video)
+        let layerNumber = project.tracks.count + 1
+        let targetTrack = TimelineTrack(name: "Capa \(layerNumber) - \(assetName)", kind: .video)
         project.tracks.insert(targetTrack, at: 0) // Capa superior en la jerarquía
 
         let clip = TimelineClip(
@@ -584,6 +703,7 @@ public final class EditorViewModel: ObservableObject {
 
         project.tracks[0].clips.append(clip)
         selectedClipId = clip.id
+        selectedTrackId = targetTrack.id
         hasUnsavedChanges = true
         debouncedRebuildComposition()
         recordHistory(title: "Insertar \(shapeDisplayName)", icon: "circle.fill")
@@ -596,22 +716,17 @@ public final class EditorViewModel: ObservableObject {
 
         let kind: TrackKind = (asset.mediaType == .audio) ? .audio : .video
 
-        // Cada elemento agregado tiene su propia pista / capa individual dedicada con su nombre propio,
-        // a menos que el usuario lo haya arrastrado explícitamente sobre una pista específica existente.
-        let suitableTrackId: UUID
-        if let target = targetTrackId, project.tracks.contains(where: { $0.id == target }) {
-            suitableTrackId = target
+        // Cada elemento agregado tiene SIEMPRE su propia pista / capa individual dedicada con su nombre propio,
+        // garantizando que nunca se junten clips en la misma pista al arrastrar o pulsar el botón (+).
+        let baseName = (asset.fileName as NSString).deletingPathExtension
+        let cleanLayerName = baseName.isEmpty ? asset.fileName : baseName
+        let newTrack = TimelineTrack(name: cleanLayerName, kind: kind)
+        if kind == .video {
+            project.tracks.insert(newTrack, at: 0) // Capas de video arriba en la jerarquía
         } else {
-            let baseName = (asset.fileName as NSString).deletingPathExtension
-            let cleanLayerName = baseName.isEmpty ? asset.fileName : baseName
-            let newTrack = TimelineTrack(name: cleanLayerName, kind: kind)
-            if kind == .video {
-                project.tracks.insert(newTrack, at: 0) // Capas de video arriba en la jerarquía
-            } else {
-                project.tracks.append(newTrack) // Capas de audio abajo
-            }
-            suitableTrackId = newTrack.id
+            project.tracks.append(newTrack) // Capas de audio abajo
         }
+        let suitableTrackId = newTrack.id
 
         let clipDuration = min(asset.duration > 0 ? asset.duration : 5.0, 30.0) // Clip inicial conveniente
         let startTime = max(0, timelineTime ?? playbackEngine.currentTime)
@@ -926,60 +1041,118 @@ public final class EditorViewModel: ObservableObject {
         self.clipboardClip = clip
     }
 
-    /// Pega el clip del portapapeles en la posición actual del playhead (⌘V)
+    /// Pega el clip del portapapeles creando SIEMPRE una nueva capa/línea dedicada para él (⌘V)
     public func pasteClipAtPlayhead(targetTrackId: UUID? = nil) {
         guard let source = clipboardClip else { return }
         var pasted = source
         pasted.id = UUID()
         pasted.startTime = playbackEngine.currentTime
 
-        let destinationId: UUID
-        if let target = targetTrackId {
-            destinationId = target
-        } else if project.tracks.contains(where: { $0.id == source.trackId && !$0.isLocked }) {
-            destinationId = source.trackId
-        } else if let fallback = project.tracks.first(where: { !$0.isLocked }) {
-            destinationId = fallback.id
+        // Determinamos el tipo de capa
+        let kind: TrackKind
+        if let sourceTrack = project.tracks.first(where: { $0.id == source.trackId }) {
+            kind = sourceTrack.kind
+        } else if let asset = assetsById[source.assetId] {
+            kind = (asset.mediaType == .audio) ? .audio : .video
         } else {
-            return
+            kind = .video
         }
 
-        pasted.trackId = destinationId
+        let layerNumber = project.tracks.count + 1
+        let newLayerName = "Capa \(layerNumber) - \(pasted.name)"
 
-        // Aplicar magnetismo sutil al pegar si coincide con otro borde
-        let (snappedStart, _) = snapTime(candidateStartTime: pasted.startTime, clipDuration: pasted.duration)
-        pasted.startTime = snappedStart
+        var newTrack = TimelineTrack(name: newLayerName, kind: kind)
+        pasted.trackId = newTrack.id
+        newTrack.clips.append(pasted)
 
-        if let tIdx = project.tracks.firstIndex(where: { $0.id == destinationId }) {
-            project.tracks[tIdx].clips.append(pasted)
-            selectedClipId = pasted.id
-            hasUnsavedChanges = true
-            debouncedRebuildComposition()
-            objectWillChange.send()
-        }
+        project.tracks.append(newTrack)
+        selectedTrackId = newTrack.id
+        selectedClipId = pasted.id
+        hasUnsavedChanges = true
+        recordHistory(title: "Pegar en nueva capa", icon: "doc.on.clipboard")
+        debouncedRebuildComposition()
+        objectWillChange.send()
     }
 
-    /// Duplica el clip seleccionado colocándolo inmediatamente a continuación (⌘D)
+    /// Duplica el clip seleccionado colocándolo en una nueva capa/línea dedicada (⌘D)
     public func duplicateSelectedClip() {
         guard let selectedId = selectedClipId else { return }
         duplicateClip(id: selectedId)
     }
 
-    /// Duplica un clip específico colocándolo inmediatamente después en la misma pista
+    /// Duplica un clip específico creando SIEMPRE una nueva capa/línea dedicada para la copia (⌘D)
     public func duplicateClip(id: UUID) {
         for tIdx in 0..<project.tracks.count {
             if let clip = project.tracks[tIdx].clips.first(where: { $0.id == id }) {
                 var clone = clip
                 clone.id = UUID()
                 clone.name = "\(clip.name) (Copia)"
-                clone.startTime = clip.endTime + 0.5
-                project.tracks[tIdx].clips.append(clone)
+
+                let sourceTrack = project.tracks[tIdx]
+                let kind = sourceTrack.kind
+                let layerNumber = project.tracks.count + 1
+                let newLayerName = "Capa \(layerNumber) - \(clone.name)"
+
+                var newTrack = TimelineTrack(name: newLayerName, kind: kind)
+                clone.trackId = newTrack.id
+                newTrack.clips.append(clone)
+
+                // Insertamos la nueva capa inmediatamente arriba de la fuente
+                let insertIdx = max(0, tIdx)
+                project.tracks.insert(newTrack, at: insertIdx)
+
+                selectedTrackId = newTrack.id
                 selectedClipId = clone.id
                 hasUnsavedChanges = true
+                recordHistory(title: "Duplicar en nueva capa", icon: "plus.square.on.square")
                 debouncedRebuildComposition()
-                break
+                objectWillChange.send()
+                return
             }
         }
+    }
+
+    // MARK: - Reordenamiento de Capas (Subir / Bajar / Traer al Frente / Enviar al Fondo)
+    public func moveTrackUp(id: UUID) {
+        guard let idx = project.tracks.firstIndex(where: { $0.id == id }), idx > 0 else { return }
+        project.tracks.swapAt(idx, idx - 1)
+        selectedTrackId = id
+        hasUnsavedChanges = true
+        recordHistory(title: "Subir capa (traer adelante)", icon: "arrow.up")
+        debouncedRebuildComposition()
+        objectWillChange.send()
+    }
+
+    public func moveTrackDown(id: UUID) {
+        guard let idx = project.tracks.firstIndex(where: { $0.id == id }), idx < project.tracks.count - 1 else { return }
+        project.tracks.swapAt(idx, idx + 1)
+        selectedTrackId = id
+        hasUnsavedChanges = true
+        recordHistory(title: "Bajar capa (enviar atrás)", icon: "arrow.down")
+        debouncedRebuildComposition()
+        objectWillChange.send()
+    }
+
+    public func bringTrackToFront(id: UUID) {
+        guard let idx = project.tracks.firstIndex(where: { $0.id == id }), idx > 0 else { return }
+        let track = project.tracks.remove(at: idx)
+        project.tracks.insert(track, at: 0)
+        selectedTrackId = id
+        hasUnsavedChanges = true
+        recordHistory(title: "Traer capa al frente", icon: "arrow.up.to.line")
+        debouncedRebuildComposition()
+        objectWillChange.send()
+    }
+
+    public func sendTrackToBack(id: UUID) {
+        guard let idx = project.tracks.firstIndex(where: { $0.id == id }), idx < project.tracks.count - 1 else { return }
+        let track = project.tracks.remove(at: idx)
+        project.tracks.append(track)
+        selectedTrackId = id
+        hasUnsavedChanges = true
+        recordHistory(title: "Enviar capa al fondo", icon: "arrow.down.to.line")
+        debouncedRebuildComposition()
+        objectWillChange.send()
     }
 
     // MARK: - Fotogramas Clave (Keyframes)
@@ -1013,25 +1186,6 @@ public final class EditorViewModel: ObservableObject {
             c.toggleKeyframe(for: property, at: relativeTime, currentValue: val)
         }
         recordHistory(title: "Alternar fotograma clave: \(property.displayName)", icon: "diamond.fill")
-    }
-
-    // MARK: - Reordenamiento de Jerarquía de Capas (El elemento de arriba manda)
-    public func moveTrackUp(id: UUID) {
-        guard let index = project.tracks.firstIndex(where: { $0.id == id }), index > 0 else { return }
-        project.tracks.swapAt(index, index - 1)
-        recordHistory(title: "Subir capa en jerarquía", icon: "arrow.up")
-        hasUnsavedChanges = true
-        debouncedRebuildComposition()
-        objectWillChange.send()
-    }
-
-    public func moveTrackDown(id: UUID) {
-        guard let index = project.tracks.firstIndex(where: { $0.id == id }), index < project.tracks.count - 1 else { return }
-        project.tracks.swapAt(index, index + 1)
-        recordHistory(title: "Bajar capa en jerarquía", icon: "arrow.down")
-        hasUnsavedChanges = true
-        debouncedRebuildComposition()
-        objectWillChange.send()
     }
 
     // MARK: - Historial de Acciones (Estilo Adobe: Deshacer / Rehacer / Viaje Temporal)
@@ -1280,9 +1434,23 @@ public final class EditorViewModel: ObservableObject {
 
     public func saveProject(to url: URL? = nil) {
         let destinationURL = url ?? currentProjectURL
-        guard let finalURL = destinationURL else {
+        guard var finalURL = destinationURL else {
             promptSavePanel()
             return
+        }
+
+        // Si el usuario renombró el proyecto dentro del programa y el archivo físico tiene otro nombre,
+        // sincronizamos el nombre del archivo en disco con el nombre del proyecto
+        let currentFileBase = finalURL.deletingPathExtension().lastPathComponent
+        let cleanProjectName = project.projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanProjectName.isEmpty && cleanProjectName != currentFileBase && url == nil {
+            let renamedURL = finalURL.deletingLastPathComponent().appendingPathComponent("\(cleanProjectName).88proj")
+            if !FileManager.default.fileExists(atPath: renamedURL.path) {
+                if FileManager.default.fileExists(atPath: finalURL.path) {
+                    try? FileManager.default.moveItem(at: finalURL, to: renamedURL)
+                }
+                finalURL = renamedURL
+            }
         }
 
         do {
@@ -1296,6 +1464,13 @@ public final class EditorViewModel: ObservableObject {
             hasUnsavedChanges = false
             lastSavedTimestamp = Date()
             autosaveStatusMessage = "Guardado"
+
+            // Estampar el icono oficial de 88 Editor en el archivo .88proj del sistema de archivos (Finder)
+            if let appIcon = AppLogoIconView.getAppIconImage() {
+                NSWorkspace.shared.setIcon(appIcon, forFile: finalURL.path, options: [])
+            }
+
+            RecentProjectsManager.shared.add(url: finalURL, name: project.projectName)
             print("[88 Editor] Proyecto e historial guardados exitosamente en \(finalURL.path)")
             objectWillChange.send()
         } catch {
@@ -1312,6 +1487,10 @@ public final class EditorViewModel: ObservableObject {
 
         if panel.runModal() == .OK, let selectedURL = panel.url {
             let finalURL = selectedURL.pathExtension == "88proj" ? selectedURL : selectedURL.appendingPathExtension("88proj")
+            let baseName = finalURL.deletingPathExtension().lastPathComponent
+            if !baseName.isEmpty {
+                project.projectName = baseName
+            }
             saveProject(to: finalURL)
         }
     }
@@ -1336,6 +1515,7 @@ public final class EditorViewModel: ObservableObject {
             self.selectedClipId = nil
             self.lastSavedTimestamp = Date()
             self.autosaveStatusMessage = "Guardado"
+            RecentProjectsManager.shared.add(url: url, name: loadedProject.projectName)
 
             // Restaurar historial de acciones previo si existe
             if let saved = loadedProject.savedHistory, !saved.isEmpty {
@@ -1411,7 +1591,7 @@ public final class EditorViewModel: ObservableObject {
         objectWillChange.send()
     }
 
-    // MARK: - Exportación y Renderizado de Video
+    // MARK: - Exportación y Renderizado de Video y Audio
     private var activeExportSession: AVAssetExportSession?
     private var exportTimer: Timer?
 
@@ -1419,29 +1599,38 @@ public final class EditorViewModel: ObservableObject {
         guard !project.tracks.isEmpty && !project.tracks.allSatisfy({ $0.clips.isEmpty }) else {
             let alert = NSAlert()
             alert.messageText = "Línea de tiempo vacía"
-            alert.informativeText = "Añade al menos un elemento o clip a la línea de tiempo antes de exportar el video."
+            alert.informativeText = "Añade al menos un elemento o clip a la línea de tiempo antes de exportar el video o audio."
             alert.alertStyle = .warning
             alert.runModal()
             return
         }
 
-        let panel = NSSavePanel()
-        panel.title = "Exportar y Renderizar Video"
-        panel.prompt = "Renderizar"
-        panel.nameFieldStringValue = "\(project.projectName).mp4"
-        panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie]
-
-        if panel.runModal() == .OK, let outputURL = panel.url {
-            startExport(to: outputURL)
-        }
+        // Abre el modal versátil de exportación con presets de redes sociales y formatos
+        isExportSettingsSheetPresented = true
     }
 
     public func startExport(to outputURL: URL) {
+        startConfiguredExport(
+            to: outputURL,
+            container: outputURL.pathExtension.lowercased() == "mov" ? .mov : .mp4,
+            quality: .high,
+            mediaType: .videoAndAudio,
+            useWorkArea: project.hasCustomWorkArea
+        )
+    }
+
+    public func startConfiguredExport(
+        to outputURL: URL,
+        container: ExportContainer,
+        quality: ExportQuality,
+        mediaType: ExportMediaType,
+        useWorkArea: Bool
+    ) {
         try? FileManager.default.removeItem(at: outputURL)
 
         isExportSheetPresented = true
         exportProgress = 0.0
-        exportStatusMessage = "Preparando composición de video y audio..."
+        exportStatusMessage = "Preparando composición de medios..."
 
         Task {
             let compResult = await CompositionBuilder.build(
@@ -1451,25 +1640,52 @@ public final class EditorViewModel: ObservableObject {
             )
 
             await MainActor.run {
+                let presetName: String
+                if mediaType == .audioOnly {
+                    presetName = AVAssetExportPresetAppleM4A
+                } else if container == .mov && quality == .maximum {
+                    presetName = AVAssetExportPresetAppleProRes422LPCM
+                } else {
+                    presetName = quality.avExportPreset
+                }
+
+                // Fallback seguro si el preset específico no es compatible con el hardware
+                let safePreset = AVAssetExportSession.exportPresets(compatibleWith: compResult.composition).contains(presetName)
+                    ? presetName
+                    : AVAssetExportPresetHighestQuality
+
                 guard let exportSession = AVAssetExportSession(
                     asset: compResult.composition,
-                    presetName: AVAssetExportPresetHighestQuality
+                    presetName: safePreset
                 ) else {
                     self.exportStatusMessage = "Error al iniciar sesión de exportación."
                     return
                 }
 
                 exportSession.outputURL = outputURL
-                exportSession.outputFileType = outputURL.pathExtension.lowercased() == "mov" ? .mov : .mp4
-                if let videoComp = compResult.videoComposition {
+                exportSession.outputFileType = container.avFileType
+
+                if mediaType != .audioOnly, let videoComp = compResult.videoComposition {
                     exportSession.videoComposition = videoComp
                 }
                 if let audioMix = compResult.audioMix {
                     exportSession.audioMix = audioMix
                 }
 
+                // Configurar Rango de Renderizado / Área de Trabajo (In / Out)
+                if useWorkArea && self.project.hasCustomWorkArea {
+                    let renderIn = self.project.effectiveRenderIn
+                    let renderDuration = self.project.effectiveRenderDuration
+                    exportSession.timeRange = CMTimeRange(
+                        start: CMTime(seconds: renderIn, preferredTimescale: 600),
+                        duration: CMTime(seconds: renderDuration, preferredTimescale: 600)
+                    )
+                    self.exportStatusMessage = String(format: "Renderizando rango (%.1fs a %.1fs)...", renderIn, renderIn + renderDuration)
+                } else {
+                    self.exportStatusMessage = "Renderizando proyecto completo..."
+                }
+
                 self.activeExportSession = exportSession
-                self.exportStatusMessage = "Renderizando fotogramas..."
 
                 self.exportTimer?.invalidate()
                 self.exportTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
@@ -1493,7 +1709,7 @@ public final class EditorViewModel: ObservableObject {
                             if session.status == .failed {
                                 let alert = NSAlert()
                                 alert.messageText = "Fallo en la exportación"
-                                alert.informativeText = session.error?.localizedDescription ?? "Ocurrió un error inesperado al renderizar el video."
+                                alert.informativeText = session.error?.localizedDescription ?? "Ocurrió un error inesperado al renderizar el archivo."
                                 alert.alertStyle = .critical
                                 alert.runModal()
                             }

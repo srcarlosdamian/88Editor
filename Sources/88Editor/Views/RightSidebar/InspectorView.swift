@@ -118,9 +118,14 @@ public struct InspectorView: View {
         }
     }
 
-    // MARK: - Inspector de Clip Seleccionado
+    // MARK: - Inspector de Clip Seleccionado (100% Contextual)
     @ViewBuilder
     private func clipInspectorContent(clip: TimelineClip) -> some View {
+        let isAudioOnly = viewModel.isClipAudioOnly(clip)
+        let isVisual = viewModel.isClipVisual(clip)
+        let hasAudio = viewModel.clipHasAudio(clip)
+        let isCroppable = viewModel.isClipCroppable(clip)
+
         // Alerta de Archivo No Encontrado / Eliminado del Disco (Offline Media)
         if let asset = viewModel.asset(for: clip), asset.isMissing {
             VStack(alignment: .leading, spacing: 8) {
@@ -161,25 +166,84 @@ public struct InspectorView: View {
             Divider().foregroundColor(DesignSystem.border)
         }
 
-        // 1. IDENTIFICADOR
+        // 1. IDENTIFICADOR CONTEXTUAL
         VStack(alignment: .leading, spacing: 6) {
             Text("IDENTIFICADOR")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(.secondary)
 
             HStack(spacing: 8) {
-                Image(systemName: clip.shapeType != nil ? "circle.fill" : (clip.textOverlay != nil ? "character.textbox" : "film"))
-                    .foregroundColor(.secondary)
+                Image(systemName: isAudioOnly ? "waveform" : (clip.shapeType != nil ? "circle.fill" : (clip.textOverlay != nil ? "character.textbox" : "film")))
+                    .foregroundColor(isAudioOnly ? .teal : .secondary)
                     .font(.system(size: 13))
-                Text(clip.name)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(clip.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                    Text(isAudioOnly ? "Capa de Audio" : (clip.shapeType != nil ? "Forma Vectorial" : (clip.textOverlay != nil ? "Texto Vectorial" : "Capa Visual")))
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
             }
         }
 
         Divider().foregroundColor(DesignSystem.border)
 
-        // 2. FORMA VECTORIAL (Si es un objeto vectorial de forma)
+        // 2. TEXTO Y TIPOGRAFÍA (Sólo si es objeto de texto)
+        if clip.textOverlay != nil || viewModel.asset(for: clip)?.mediaType == .text {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Texto y Tipografía", systemImage: "character")
+                    .font(.system(size: 11, weight: .bold))
+
+                TextField("Texto...", text: Binding(
+                    get: { viewModel.selectedClip?.textOverlay ?? "" },
+                    set: { val in
+                        viewModel.updateSelectedClip { $0.textOverlay = val }
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+
+                ColorPicker("Color de Texto", selection: Binding(
+                    get: { Color(hex: clip.textColorHex ?? "#FF3B30") },
+                    set: { newCol in
+                        viewModel.updateSelectedClip { $0.textColorHex = newCol.toHex() }
+                    }
+                ))
+
+                TransformControlRow(
+                    title: "Tamaño Fuente",
+                    value: Binding(
+                        get: { viewModel.selectedClip?.fontSize ?? 54.0 },
+                        set: { val in
+                            viewModel.updateSelectedClip { $0.fontSize = val }
+                        }
+                    ),
+                    range: 12...220,
+                    step: 1.0,
+                    unit: " pt",
+                    defaultValue: 54.0
+                )
+
+                HStack {
+                    Text(clip.fontName ?? "Fuente del sistema")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Button("Elegir Fuente...") {
+                        viewModel.isFontPickerPresented = true
+                    }
+                    .controlSize(.small)
+                }
+            }
+
+            Divider().foregroundColor(DesignSystem.border)
+        }
+
+        // 3. FORMA VECTORIAL (Sólo si es una forma vectorial)
         if let shape = clip.shapeType {
             VStack(alignment: .leading, spacing: 10) {
                 Label("Forma Vectorial", systemImage: "circle.fill")
@@ -198,7 +262,7 @@ public struct InspectorView: View {
                     Text("Triángulo").tag("triangle")
                 }
 
-                ColorPicker("Color de Relleno (Rojo por Defecto)", selection: Binding(
+                ColorPicker("Color de Relleno", selection: Binding(
                     get: { Color(hex: clip.fillColorHex ?? "#FF3B30") },
                     set: { newCol in
                         viewModel.updateSelectedClip { $0.fillColorHex = newCol.toHex() }
@@ -230,148 +294,251 @@ public struct InspectorView: View {
             Divider().foregroundColor(DesignSystem.border)
         }
 
-        // 3. TRANSFORMACIÓN BÁSICA (Interactiva y enlazada de forma segura)
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Transformación Básica", systemImage: "crop.rotate")
-                .font(.system(size: 11, weight: .bold))
-
-            TransformControlRow(
-                title: "Posición X",
-                value: Binding(
-                    get: { viewModel.selectedClip?.positionX ?? 0.0 },
-                    set: { val in
-                        viewModel.updateSelectedClip { $0.positionX = val }
-                    }
-                ),
-                range: -800...800,
-                step: 1.0,
-                unit: " px",
-                defaultValue: 0.0
-            )
-
-            TransformControlRow(
-                title: "Posición Y",
-                value: Binding(
-                    get: { viewModel.selectedClip?.positionY ?? 0.0 },
-                    set: { val in
-                        viewModel.updateSelectedClip { $0.positionY = val }
-                    }
-                ),
-                range: -800...800,
-                step: 1.0,
-                unit: " px",
-                defaultValue: 0.0
-            )
-
-            TransformControlRow(
-                title: "Escala",
-                value: Binding(
-                    get: { (viewModel.selectedClip?.scale(at: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
-                    set: { val in
-                        viewModel.updateAnimatableProperty(.scale, value: val / 100.0)
-                    }
-                ),
-                range: 10...400,
-                step: 1.0,
-                unit: "%",
-                defaultValue: 100.0,
-                isKeyframeActive: viewModel.isKeyframeActive(for: .scale),
-                hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .scale),
-                onToggleKeyframe: {
-                    viewModel.toggleKeyframe(for: .scale)
-                }
-            )
-
-            TransformControlRow(
-                title: "Rotación",
-                value: Binding(
-                    get: { viewModel.selectedClip?.rotation(at: viewModel.currentClipRelativeTime) ?? 0.0 },
-                    set: { val in
-                        viewModel.updateAnimatableProperty(.rotation, value: val)
-                    }
-                ),
-                range: -180...180,
-                step: 1.0,
-                unit: "°",
-                defaultValue: 0.0,
-                isKeyframeActive: viewModel.isKeyframeActive(for: .rotation),
-                hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .rotation),
-                onToggleKeyframe: {
-                    viewModel.toggleKeyframe(for: .rotation)
-                }
-            )
-        }
-
-        Divider().foregroundColor(DesignSystem.border)
-
-        // 4. COMPOSICIÓN (Opacidad viva y con keyframes)
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Composición", systemImage: "circle.lefthalf.filled")
-                .font(.system(size: 11, weight: .bold))
-
-            TransformControlRow(
-                title: "Opacidad",
-                value: Binding(
-                    get: { (viewModel.selectedClip?.opacity(at: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
-                    set: { val in
-                        viewModel.updateAnimatableProperty(.opacity, value: val / 100.0)
-                    }
-                ),
-                range: 0...100,
-                step: 1.0,
-                unit: "%",
-                defaultValue: 100.0,
-                isKeyframeActive: viewModel.isKeyframeActive(for: .opacity),
-                hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .opacity),
-                onToggleKeyframe: {
-                    viewModel.toggleKeyframe(for: .opacity)
-                }
-            )
-        }
-
-        Divider().foregroundColor(DesignSystem.border)
-
-        // 5. AUDIO (Volumen con fotogramas clave y silenciamiento)
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("Audio", systemImage: "speaker.wave.2.fill")
+        // 4. TRANSFORMACIÓN BÁSICA (SÓLO para elementos VISUALES; NUNCA para audio)
+        if isVisual {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Transformación Básica", systemImage: "crop.rotate")
                     .font(.system(size: 11, weight: .bold))
 
-                Spacer()
+                TransformControlRow(
+                    title: "Posición X",
+                    value: Binding(
+                        get: { viewModel.selectedClip?.positionX ?? 0.0 },
+                        set: { val in
+                            viewModel.updateSelectedClip { $0.positionX = val }
+                        }
+                    ),
+                    range: -800...800,
+                    step: 1.0,
+                    unit: " px",
+                    defaultValue: 0.0
+                )
 
-                Button {
-                    viewModel.updateSelectedClip { $0.isMuted.toggle() }
-                } label: {
-                    Image(systemName: (viewModel.selectedClip?.isMuted ?? false) ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .foregroundColor((viewModel.selectedClip?.isMuted ?? false) ? .red : .secondary)
-                }
-                .buttonStyle(.plain)
-                .help((viewModel.selectedClip?.isMuted ?? false) ? "Activar audio" : "Silenciar clip")
+                TransformControlRow(
+                    title: "Posición Y",
+                    value: Binding(
+                        get: { viewModel.selectedClip?.positionY ?? 0.0 },
+                        set: { val in
+                            viewModel.updateSelectedClip { $0.positionY = val }
+                        }
+                    ),
+                    range: -800...800,
+                    step: 1.0,
+                    unit: " px",
+                    defaultValue: 0.0
+                )
+
+                TransformControlRow(
+                    title: "Escala",
+                    value: Binding(
+                        get: { (viewModel.selectedClip?.scale(at: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
+                        set: { val in
+                            viewModel.updateAnimatableProperty(.scale, value: val / 100.0)
+                        }
+                    ),
+                    range: 10...400,
+                    step: 1.0,
+                    unit: "%",
+                    defaultValue: 100.0,
+                    isKeyframeActive: viewModel.isKeyframeActive(for: .scale),
+                    hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .scale),
+                    onToggleKeyframe: {
+                        viewModel.toggleKeyframe(for: .scale)
+                    }
+                )
+
+                TransformControlRow(
+                    title: "Rotación",
+                    value: Binding(
+                        get: { viewModel.selectedClip?.rotation(at: viewModel.currentClipRelativeTime) ?? 0.0 },
+                        set: { val in
+                            viewModel.updateAnimatableProperty(.rotation, value: val)
+                        }
+                    ),
+                    range: -180...180,
+                    step: 1.0,
+                    unit: "°",
+                    defaultValue: 0.0,
+                    isKeyframeActive: viewModel.isKeyframeActive(for: .rotation),
+                    hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .rotation),
+                    onToggleKeyframe: {
+                        viewModel.toggleKeyframe(for: .rotation)
+                    }
+                )
             }
 
-            TransformControlRow(
-                title: "Volumen",
-                value: Binding(
-                    get: { (viewModel.selectedClip?.volume(at: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
-                    set: { val in
-                        viewModel.updateAnimatableProperty(.volume, value: val / 100.0)
+            Divider().foregroundColor(DesignSystem.border)
+
+            // 5. COMPOSICIÓN (Opacidad) (SÓLO para elementos VISUALES; NUNCA para audio)
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Composición", systemImage: "circle.lefthalf.filled")
+                    .font(.system(size: 11, weight: .bold))
+
+                TransformControlRow(
+                    title: "Opacidad",
+                    value: Binding(
+                        get: { (viewModel.selectedClip?.opacity(at: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
+                        set: { val in
+                            viewModel.updateAnimatableProperty(.opacity, value: val / 100.0)
+                        }
+                    ),
+                    range: 0...100,
+                    step: 1.0,
+                    unit: "%",
+                    defaultValue: 100.0,
+                    isKeyframeActive: viewModel.isKeyframeActive(for: .opacity),
+                    hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .opacity),
+                    onToggleKeyframe: {
+                        viewModel.toggleKeyframe(for: .opacity)
                     }
-                ),
-                range: 0...100,
-                step: 1.0,
-                unit: "%",
-                defaultValue: 100.0,
-                isKeyframeActive: viewModel.isKeyframeActive(for: .volume),
-                hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .volume),
-                onToggleKeyframe: {
-                    viewModel.toggleKeyframe(for: .volume)
-                }
-            )
+                )
+            }
+
+            Divider().foregroundColor(DesignSystem.border)
         }
 
-        Divider().foregroundColor(DesignSystem.border)
+        // 6. RECORTE ESPACIAL (Crop) (SÓLO para imágenes y videos; NUNCA para audio, texto o formas)
+        if isCroppable {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Recorte Espacial (Crop)", systemImage: "crop")
+                        .font(.system(size: 11, weight: .bold))
 
-        // 6. TEMPORIZACIÓN Y RECORTE
+                    Spacer()
+
+                    if clip.hasCrop {
+                        Button("Restablecer") {
+                            viewModel.updateSelectedClip {
+                                $0.cropLeft = 0.0
+                                $0.cropRight = 0.0
+                                $0.cropTop = 0.0
+                                $0.cropBottom = 0.0
+                            }
+                            viewModel.recordHistory(title: "Restablecer recorte", icon: "crop")
+                        }
+                        .font(.system(size: 10))
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
+                    }
+                }
+
+                TransformControlRow(
+                    title: "Izquierda",
+                    value: Binding(
+                        get: { (viewModel.selectedClip?.cropLeft ?? 0.0) * 100.0 },
+                        set: { val in
+                            viewModel.updateSelectedClip { $0.cropLeft = val / 100.0 }
+                        }
+                    ),
+                    range: 0...48,
+                    step: 1.0,
+                    unit: "%",
+                    defaultValue: 0.0
+                )
+
+                TransformControlRow(
+                    title: "Derecha",
+                    value: Binding(
+                        get: { (viewModel.selectedClip?.cropRight ?? 0.0) * 100.0 },
+                        set: { val in
+                            viewModel.updateSelectedClip { $0.cropRight = val / 100.0 }
+                        }
+                    ),
+                    range: 0...48,
+                    step: 1.0,
+                    unit: "%",
+                    defaultValue: 0.0
+                )
+
+                TransformControlRow(
+                    title: "Arriba",
+                    value: Binding(
+                        get: { (viewModel.selectedClip?.cropTop ?? 0.0) * 100.0 },
+                        set: { val in
+                            viewModel.updateSelectedClip { $0.cropTop = val / 100.0 }
+                        }
+                    ),
+                    range: 0...48,
+                    step: 1.0,
+                    unit: "%",
+                    defaultValue: 0.0
+                )
+
+                TransformControlRow(
+                    title: "Abajo",
+                    value: Binding(
+                        get: { (viewModel.selectedClip?.cropBottom ?? 0.0) * 100.0 },
+                        set: { val in
+                            viewModel.updateSelectedClip { $0.cropBottom = val / 100.0 }
+                        }
+                    ),
+                    range: 0...48,
+                    step: 1.0,
+                    unit: "%",
+                    defaultValue: 0.0
+                )
+
+                Button {
+                    viewModel.openCropModal(for: clip)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "crop")
+                            .font(.system(size: 10))
+                        Text("Ventana de Recorte Interactivo...")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            Divider().foregroundColor(DesignSystem.border)
+        }
+
+        // 7. AUDIO (Volumen con fotogramas clave y silenciamiento) (SÓLO para audios o videos con audio)
+        if hasAudio {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Audio", systemImage: "speaker.wave.2.fill")
+                        .font(.system(size: 11, weight: .bold))
+
+                    Spacer()
+
+                    Button {
+                        viewModel.updateSelectedClip { $0.isMuted.toggle() }
+                    } label: {
+                        Image(systemName: (viewModel.selectedClip?.isMuted ?? false) ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .foregroundColor((viewModel.selectedClip?.isMuted ?? false) ? .red : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help((viewModel.selectedClip?.isMuted ?? false) ? "Activar audio" : "Silenciar clip")
+                }
+
+                TransformControlRow(
+                    title: "Volumen",
+                    value: Binding(
+                        get: { (viewModel.selectedClip?.volume(at: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
+                        set: { val in
+                            viewModel.updateAnimatableProperty(.volume, value: val / 100.0)
+                        }
+                    ),
+                    range: 0...100,
+                    step: 1.0,
+                    unit: "%",
+                    defaultValue: 100.0,
+                    isKeyframeActive: viewModel.isKeyframeActive(for: .volume),
+                    hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .volume),
+                    onToggleKeyframe: {
+                        viewModel.toggleKeyframe(for: .volume)
+                    }
+                )
+            }
+
+            Divider().foregroundColor(DesignSystem.border)
+        }
+
+        // 8. TEMPORIZACIÓN Y RECORTE
         VStack(alignment: .leading, spacing: 8) {
             Label("Temporización y Recorte", systemImage: "clock.arrow.2.circlepath")
                 .font(.system(size: 11, weight: .bold))
@@ -390,59 +557,6 @@ public struct InspectorView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("DURACIÓN").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
                     Text(String(format: "%.2f s", clip.duration)).font(DesignSystem.monoFont)
-                }
-            }
-        }
-
-        // 7. TEXTO Y TIPOGRAFÍA (Sólo se muestra si se tiene seleccionado un objeto de texto)
-        if clip.textOverlay != nil || viewModel.asset(for: clip)?.mediaType == .text {
-            Divider().foregroundColor(DesignSystem.border)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Texto y Tipografía", systemImage: "character")
-                    .font(.system(size: 11, weight: .bold))
-
-                TextField("Texto superpuesto opcional...", text: Binding(
-                    get: { viewModel.selectedClip?.textOverlay ?? "" },
-                    set: { val in
-                        viewModel.updateSelectedClip { $0.textOverlay = val }
-                    }
-                ))
-                .textFieldStyle(.roundedBorder)
-
-                ColorPicker("Color de Texto", selection: Binding(
-                    get: { Color(hex: clip.textColorHex ?? "#FFFFFF") },
-                    set: { newCol in
-                        viewModel.updateSelectedClip { $0.textColorHex = newCol.toHex() }
-                    }
-                ))
-
-                TransformControlRow(
-                    title: "Tamaño Fuente",
-                    value: Binding(
-                        get: { viewModel.selectedClip?.fontSize ?? 48.0 },
-                        set: { val in
-                            viewModel.updateSelectedClip { $0.fontSize = val }
-                        }
-                    ),
-                    range: 12...180,
-                    step: 1.0,
-                    unit: " pt",
-                    defaultValue: 48.0
-                )
-
-                HStack {
-                    Text(clip.fontName ?? "Fuente del sistema")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    Button("Elegir Fuente...") {
-                        viewModel.isFontPickerPresented = true
-                    }
-                    .controlSize(.small)
                 }
             }
         }

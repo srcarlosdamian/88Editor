@@ -89,18 +89,61 @@ public struct TimelineTrackView: View {
                 }
                 .buttonStyle(.plain)
                 .help(track.isLocked ? "Desbloquear capa" : "Bloquear capa")
+
+                // Botones rápidos para reordenar capa arriba / abajo
+                VStack(spacing: 1) {
+                    Button {
+                        viewModel.moveTrackUp(id: track.id)
+                    } label: {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Subir capa (traer adelante)")
+
+                    Button {
+                        viewModel.moveTrackDown(id: track.id)
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Bajar capa (enviar atrás)")
+                }
+                .padding(.leading, 2)
             }
             .padding(.horizontal, 8)
             .frame(width: 160, height: currentHeight)
             .background(Color(NSColor.controlBackgroundColor))
             .contextMenu {
-                Button("Subir capa en jerarquía (adelante)") {
+                Button {
+                    viewModel.bringTrackToFront(id: track.id)
+                } label: {
+                    Label("Traer al Frente (Capa Superior)", systemImage: "arrow.up.to.line")
+                }
+
+                Button {
                     viewModel.moveTrackUp(id: track.id)
+                } label: {
+                    Label("Subir Capa (Traer hacia adelante)", systemImage: "arrow.up")
                 }
-                Button("Bajar capa en jerarquía (atrás)") {
+
+                Button {
                     viewModel.moveTrackDown(id: track.id)
+                } label: {
+                    Label("Bajar Capa (Enviar hacia atrás)", systemImage: "arrow.down")
                 }
+
+                Button {
+                    viewModel.sendTrackToBack(id: track.id)
+                } label: {
+                    Label("Enviar al Fondo (Capa Inferior)", systemImage: "arrow.down.to.line")
+                }
+
                 Divider()
+
                 Button("Renombrar capa...") {
                     tempName = track.name
                     isEditingName = true
@@ -201,6 +244,22 @@ public struct TimelineTrackView: View {
                         isMissing: viewModel.asset(for: clip)?.isMissing ?? false,
                         onReconnect: {
                             viewModel.reconnectAsset(id: clip.assetId)
+                        },
+                        onCrop: {
+                            viewModel.selectedClipId = clip.id
+                            viewModel.selectedTrackId = track.id
+                            viewModel.openCropModal(for: clip)
+                        },
+                        onResetCrop: {
+                            viewModel.selectedClipId = clip.id
+                            viewModel.selectedTrackId = track.id
+                            viewModel.updateSelectedClip {
+                                $0.cropLeft = 0.0
+                                $0.cropRight = 0.0
+                                $0.cropTop = 0.0
+                                $0.cropBottom = 0.0
+                            }
+                            viewModel.recordHistory(title: "Restablecer recorte", icon: "crop")
                         }
                     )
                 }
@@ -221,7 +280,8 @@ public struct TimelineTrackView: View {
                     if let rawStr = item as? String ?? (item as? Data).flatMap({ String(data: $0, encoding: .utf8) }),
                        let assetUuid = UUID(uuidString: rawStr.trimmingCharacters(in: .whitespacesAndNewlines)) {
                         DispatchQueue.main.async {
-                            viewModel.addClipToTimeline(assetId: assetUuid, targetTrackId: track.id)
+                            // Cada elemento arrastrado recibe su propia pista/capa independiente
+                            viewModel.addClipToTimeline(assetId: assetUuid, targetTrackId: nil)
                         }
                     }
                 }
@@ -235,7 +295,8 @@ public struct TimelineTrackView: View {
                         DispatchQueue.main.async {
                             viewModel.importFiles(urls: [url])
                             if let newAsset = viewModel.project.assets.last {
-                                viewModel.addClipToTimeline(assetId: newAsset.id, targetTrackId: track.id)
+                                // Cada elemento arrastrado recibe su propia pista/capa independiente
+                                viewModel.addClipToTimeline(assetId: newAsset.id, targetTrackId: nil)
                             }
                         }
                     }

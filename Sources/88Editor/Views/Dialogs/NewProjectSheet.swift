@@ -1,10 +1,11 @@
 import SwiftUI
 
 /// Modal Inicial de Proyecto:
-/// Selector de resolución con menú desplegable (Dropdown) por defecto "Personalizado",
-/// campos editables de Ancho/Alto, framerate (24, 30, 60 fps) y color de fondo base.
+/// Presenta lista de Proyectos Recientes a la izquierda (.88proj) y
+/// configuración de nuevo proyecto a la derecha (nombre, resolución, framerate y lienzo).
 public struct NewProjectSheet: View {
     @ObservedObject var viewModel: EditorViewModel
+    @ObservedObject var recentManager = RecentProjectsManager.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var projectName: String = "Mi Edición Minimalista"
@@ -13,169 +14,293 @@ public struct NewProjectSheet: View {
     @State private var customHeight: Double = 1080
     @State private var selectedFramerate: FramerateOption = .fps30
     @State private var selectedColorOption: Int = 0 // 0 = Negro, 1 = Carbón, 2 = Blanco
+    @State private var hoveredRecentId: String? = nil
 
     public var body: some View {
-        VStack(spacing: 0) {
-            // Cabecera del modal
-            HStack(spacing: 12) {
-                AppLogoIconView(size: 38, cornerRadius: 8)
+        HStack(spacing: 0) {
+            // COLUMNA IZQUIERDA: Proyectos Recientes (.88proj)
+            VStack(alignment: .leading, spacing: 0) {
+                // Cabecera de Recientes
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Proyectos Recientes")
+                        .font(.system(size: 13, weight: .bold))
+                    Spacer()
+                }
+                .padding(16)
+                .background(Color(NSColor.windowBackgroundColor))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(DesignSystem.border),
+                    alignment: .bottom
+                )
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Nuevo Proyecto")
-                        .font(.system(size: 15, weight: .bold))
-                    Text("Configuración de resolución y formato")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                // Lista de proyectos recientes
+                if recentManager.recentProjects.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "folder.badge.questionmark")
+                            .font(.system(size: 28))
+                            .foregroundColor(.secondary)
+                        Text("No hay proyectos recientes")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
+                } else {
+                    ScrollView {
+                        VStack(spacing: 4) {
+                            ForEach(recentManager.recentProjects) { item in
+                                recentProjectRow(item: item)
+                            }
+                        }
+                        .padding(8)
+                    }
                 }
 
-                Spacer()
+                Divider()
 
-                Button("Abrir .88proj Existente...") {
+                // Botón inferior para abrir archivo existente desde disco
+                Button {
                     dismiss()
                     viewModel.promptOpenProjectPanel()
+                } label: {
+                    HStack {
+                        Image(systemName: "folder")
+                        Text("Abrir otro archivo...")
+                            .font(.system(size: 11, weight: .medium))
+                        Spacer()
+                        Text("⌘O")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 }
-                .controlSize(.small)
+                .buttonStyle(.plain)
+                .background(Color(NSColor.windowBackgroundColor))
             }
-            .padding(18)
-            .background(Color(NSColor.windowBackgroundColor))
-            .overlay(
-                Rectangle()
-                    .frame(height: 1)
-                    .foregroundColor(DesignSystem.border),
-                alignment: .bottom
-            )
+            .frame(width: 250)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
 
-            // Formulario principal
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Nombre del Proyecto
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Nombre del Proyecto")
-                            .font(.system(size: 12, weight: .semibold))
+            // Separador vertical
+            Rectangle()
+                .fill(DesignSystem.border)
+                .frame(width: 1)
 
-                        TextField("Ej: Video Promocional", text: $projectName)
-                            .textFieldStyle(.roundedBorder)
+            // COLUMNA DERECHA: Creación de Nuevo Proyecto
+            VStack(spacing: 0) {
+                // Cabecera del formulario
+                HStack(spacing: 12) {
+                    AppLogoIconView(size: 34, cornerRadius: 7)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Nuevo Proyecto")
+                            .font(.system(size: 15, weight: .bold))
+                        Text("Configuración de resolución, framerate y lienzo")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
                     }
 
-                    // Selector de Resolución y Formato mediante Menú Desplegable (Dropdown)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Resolución y Formato")
-                            .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                }
+                .padding(16)
+                .background(Color(NSColor.windowBackgroundColor))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(DesignSystem.border),
+                    alignment: .bottom
+                )
 
-                        // Dropdown (Picker con estilo menú nativo)
-                        Picker("", selection: $selectedPreset) {
-                            ForEach(ResolutionPreset.allCases) { preset in
-                                HStack {
-                                    Image(systemName: preset.iconName)
-                                    Text(preset.rawValue)
-                                }
-                                .tag(preset)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .onChange(of: selectedPreset) { newPreset in
-                            if newPreset != .custom {
-                                customWidth = Double(newPreset.defaultDimensions.width)
-                                customHeight = Double(newPreset.defaultDimensions.height)
-                            }
-                        }
-
-                        // Campos numéricos de Ancho y Alto
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Ancho (px)")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(.secondary)
-                                TextField("1920", value: $customWidth, format: .number)
-                                    .textFieldStyle(.roundedBorder)
-                                    .onChange(of: customWidth) { _ in
-                                        if selectedPreset != .custom && customWidth != Double(selectedPreset.defaultDimensions.width) {
-                                            selectedPreset = .custom
-                                        }
-                                    }
-                            }
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Alto (px)")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(.secondary)
-                                TextField("1080", value: $customHeight, format: .number)
-                                    .textFieldStyle(.roundedBorder)
-                                    .onChange(of: customHeight) { _ in
-                                        if selectedPreset != .custom && customHeight != Double(selectedPreset.defaultDimensions.height) {
-                                            selectedPreset = .custom
-                                        }
-                                    }
-                            }
-                        }
-                        .padding(.top, 2)
-                    }
-
-                    // Framerate (24, 25, 30, 50, 60 fps)
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Tasa de Cuadros (Framerate)")
+                // Formulario principal
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        // Nombre del Proyecto
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Nombre del Proyecto")
                                 .font(.system(size: 12, weight: .semibold))
-                            Spacer()
-                            Text(selectedFramerate.displayName)
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+
+                            TextField("Ej: Video Promocional", text: $projectName)
+                                .textFieldStyle(.roundedBorder)
                         }
 
-                        Picker("", selection: $selectedFramerate) {
-                            ForEach(FramerateOption.allCases) { option in
-                                Text(option.shortName).tag(option)
+                        // Selector de Resolución y Formato mediante Menú Desplegable (Dropdown)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Resolución y Formato")
+                                .font(.system(size: 12, weight: .semibold))
+
+                            // Dropdown (Picker con estilo menú nativo)
+                            Picker("", selection: $selectedPreset) {
+                                ForEach(ResolutionPreset.allCases) { preset in
+                                    HStack {
+                                        Image(systemName: preset.iconName)
+                                        Text(preset.rawValue)
+                                    }
+                                    .tag(preset)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .onChange(of: selectedPreset) { newPreset in
+                                if newPreset != .custom {
+                                    customWidth = Double(newPreset.defaultDimensions.width)
+                                    customHeight = Double(newPreset.defaultDimensions.height)
+                                }
+                            }
+
+                            // Campos numéricos de Ancho y Alto
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Ancho (px)")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    TextField("1920", value: $customWidth, format: .number)
+                                        .textFieldStyle(.roundedBorder)
+                                        .onChange(of: customWidth) { _ in
+                                            if selectedPreset != .custom && customWidth != Double(selectedPreset.defaultDimensions.width) {
+                                                selectedPreset = .custom
+                                            }
+                                        }
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Alto (px)")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    TextField("1080", value: $customHeight, format: .number)
+                                        .textFieldStyle(.roundedBorder)
+                                        .onChange(of: customHeight) { _ in
+                                            if selectedPreset != .custom && customHeight != Double(selectedPreset.defaultDimensions.height) {
+                                                selectedPreset = .custom
+                                            }
+                                        }
+                                }
+                            }
+                            .padding(.top, 2)
+                        }
+
+                        // Framerate (24, 25, 30, 50, 60 fps)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("Tasa de Cuadros (Framerate)")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Spacer()
+                                Text(selectedFramerate.displayName)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Picker("", selection: $selectedFramerate) {
+                                ForEach(FramerateOption.allCases) { option in
+                                    Text(option.shortName).tag(option)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                        }
+
+                        // Color de Fondo Base (por defecto negro)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Color Base del Lienzo")
+                                .font(.system(size: 12, weight: .semibold))
+
+                            HStack(spacing: 14) {
+                                colorOptionButton(title: "Negro", color: .black, index: 0)
+                                colorOptionButton(title: "Gris Carbón", color: Color(red: 0.12, green: 0.12, blue: 0.12), index: 1)
+                                colorOptionButton(title: "Blanco", color: .white, index: 2)
                             }
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 18)
+                }
 
-                    // Color de Fondo Base (por defecto negro)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Color Base del Lienzo")
-                            .font(.system(size: 12, weight: .semibold))
-
-                        HStack(spacing: 14) {
-                            colorOptionButton(title: "Negro", color: .black, index: 0)
-                            colorOptionButton(title: "Gris Carbón", color: Color(red: 0.12, green: 0.12, blue: 0.12), index: 1)
-                            colorOptionButton(title: "Blanco", color: .white, index: 2)
-                        }
+                // Barra inferior de botones de acción
+                HStack {
+                    Button("Cancelar") {
+                        dismiss()
                     }
+                    .keyboardShortcut(.cancelAction)
+
+                    Spacer()
+
+                    Button("Crear Proyecto") {
+                        createProject()
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
                 }
                 .padding(.horizontal, 24)
-                .padding(.vertical, 20)
+                .padding(.vertical, 14)
+                .background(Color(NSColor.windowBackgroundColor))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(DesignSystem.border),
+                    alignment: .top
+                )
             }
+            .frame(width: 490)
+        }
+        .frame(width: 740, height: 520)
+    }
 
-            // Barra inferior de botones de acción
-            HStack {
-                Button("Cancelar") {
-                    dismiss()
+    @ViewBuilder
+    private func recentProjectRow(item: RecentProjectItem) -> some View {
+        let isHovered = (hoveredRecentId == item.id)
+
+        Button {
+            dismiss()
+            viewModel.loadProject(from: item.url)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "film.stack")
+                    .font(.system(size: 18))
+                    .foregroundColor(.secondary)
+                    .frame(width: 26)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+
+                    HStack(spacing: 4) {
+                        Text(item.relativeTime)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+
+                        Text("•")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+
+                        Text(item.displayPath)
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary.opacity(0.8))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
-                .keyboardShortcut(.cancelAction)
 
                 Spacer()
-
-                Button("Crear Proyecto") {
-                    createProject()
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 14)
-            .background(Color(NSColor.windowBackgroundColor))
-            .overlay(
-                Rectangle()
-                    .frame(height: 1)
-                    .foregroundColor(DesignSystem.border),
-                alignment: .top
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovered ? Color(NSColor.selectedContentBackgroundColor).opacity(0.25) : Color.clear)
             )
+            .contentShape(Rectangle())
         }
-        .frame(width: 520, height: 530)
+        .buttonStyle(.plain)
+        .onHover { inside in
+            hoveredRecentId = inside ? item.id : nil
+        }
     }
 
     @ViewBuilder

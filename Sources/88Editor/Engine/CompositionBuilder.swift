@@ -207,6 +207,15 @@ public final class CompositionBuilder {
                         layerInst.setTransform(t, at: clipStart)
                         layerInst.setOpacity(Float(clip.opacity), at: clipStart)
                         layerInst.setOpacity(0.0, at: clipEnd)
+
+                        if clip.hasCrop {
+                            let cropX = scaledW * CGFloat(clip.cropLeft)
+                            let cropY = scaledH * CGFloat(clip.cropTop)
+                            let cropW = scaledW * CGFloat(max(0.01, 1.0 - clip.cropLeft - clip.cropRight))
+                            let cropH = scaledH * CGFloat(max(0.01, 1.0 - clip.cropTop - clip.cropBottom))
+                            let cropRect = CGRect(x: cropX, y: cropY, width: cropW, height: cropH)
+                            layerInst.setCropRectangle(cropRect, at: clipStart)
+                        }
                     }
 
                     layerInstructions.append(layerInst)

@@ -303,9 +303,12 @@ public struct CanvasView: View {
         }
         if let text = clip.textOverlay, !text.isEmpty {
             let fSize = clip.fontSize ?? 54.0
-            let approxW = max(140, CGFloat(text.count) * (fSize * 0.58) + 40)
-            let approxH = max(60, fSize * 1.5)
-            return (min(fittedWidth, approxW), approxH)
+            let nsFont = NSFont(name: clip.fontName ?? "", size: fSize) ?? NSFont.systemFont(ofSize: fSize, weight: .bold)
+            let attrs: [NSAttributedString.Key: Any] = [.font: nsFont]
+            let textSize = (text as NSString).size(withAttributes: attrs)
+            let w = max(160, textSize.width + 40)
+            let h = max(60, textSize.height + 30)
+            return (min(fittedWidth, w), h)
         }
         if let asset = viewModel.asset(for: clip) {
             var w = asset.width
@@ -381,7 +384,7 @@ public struct CanvasView: View {
                 renderVectorShape(shape: shape, fillHex: clip.fillColorHex ?? "#FF3B30", strokeHex: clip.strokeColorHex, strokeWidth: clip.strokeWidth ?? 0)
                     .frame(width: elemW, height: elemH)
             }
-            // B) Video Nativo con aspecto original perfecto y ajuste en altura
+            // B) Video Nativo con aspecto original perfecto, ajuste en altura y recorte (Crop)
             else if let asset = layer.asset, asset.mediaType == .video {
                 ClipVideoPlayerView(
                     clip: clip,
@@ -389,23 +392,27 @@ public struct CanvasView: View {
                     viewModel: viewModel
                 )
                 .frame(width: elemW, height: elemH)
+                .clipShape(CropRectShape(left: clip.cropLeft, right: clip.cropRight, top: clip.cropTop, bottom: clip.cropBottom))
             }
-            // C) Imágenes estáticas (PNG, JPG, PSD, WebP)
+            // C) Imágenes estáticas con recorte (Crop)
             else if let asset = layer.asset, asset.mediaType == .image, let img = NSImage(contentsOf: asset.fileURL) {
                 Image(nsImage: img)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: elemW, height: elemH)
+                    .clipShape(CropRectShape(left: clip.cropLeft, right: clip.cropRight, top: clip.cropTop, bottom: clip.cropBottom))
             }
-            // D) Texto Vectorial
+            // D) Texto Vectorial nítido con resolución robusta de fuentes
             else if let text = clip.textOverlay, !text.isEmpty {
                 let textColor = Color(hex: clip.textColorHex ?? "#FF3B30")
                 let fSize = clip.fontSize ?? 54.0
                 Text(text)
-                    .font(clip.fontName != nil ? .custom(clip.fontName!, size: fSize) : .system(size: fSize, weight: .bold))
+                    .font(resolveFont(name: clip.fontName, size: fSize))
                     .foregroundColor(textColor)
+                    .multilineTextAlignment(.center)
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
                     .padding(10)
+                    .frame(width: elemW, height: elemH)
             }
         }
         .overlay(
@@ -424,6 +431,88 @@ public struct CanvasView: View {
         .onTapGesture {
             viewModel.selectedClipId = clip.id
             viewModel.selectedTrackId = clip.trackId
+        }
+        // Menú contextual con clic secundario en el elemento del Lienzo
+        .contextMenu {
+            if viewModel.isClipCroppable(clip) {
+                Button {
+                    viewModel.selectedClipId = clip.id
+                    viewModel.selectedTrackId = clip.trackId
+                    viewModel.openCropModal(for: clip)
+                } label: {
+                    Label("Recortar...", systemImage: "crop")
+                }
+
+                if clip.hasCrop {
+                    Button {
+                        viewModel.selectedClipId = clip.id
+                        viewModel.selectedTrackId = clip.trackId
+                        viewModel.updateSelectedClip {
+                            $0.cropLeft = 0.0
+                            $0.cropRight = 0.0
+                            $0.cropTop = 0.0
+                            $0.cropBottom = 0.0
+                        }
+                        viewModel.recordHistory(title: "Restablecer recorte", icon: "crop")
+                    } label: {
+                        Label("Restablecer Recorte", systemImage: "arrow.counterclockwise")
+                    }
+                }
+
+                Divider()
+            }
+
+            // Jerarquía de Capas: Subir / Bajar / Traer al Frente / Enviar al Fondo
+            Menu("Orden de Capas") {
+                Button {
+                    viewModel.bringTrackToFront(id: clip.trackId)
+                } label: {
+                    Label("Traer al Frente (Capa Superior)", systemImage: "arrow.up.to.line")
+                }
+
+                Button {
+                    viewModel.moveTrackUp(id: clip.trackId)
+                } label: {
+                    Label("Subir Capa (Traer hacia adelante)", systemImage: "arrow.up")
+                }
+
+                Button {
+                    viewModel.moveTrackDown(id: clip.trackId)
+                } label: {
+                    Label("Bajar Capa (Enviar hacia atrás)", systemImage: "arrow.down")
+                }
+
+                Button {
+                    viewModel.sendTrackToBack(id: clip.trackId)
+                } label: {
+                    Label("Enviar al Fondo (Capa Inferior)", systemImage: "arrow.down.to.line")
+                }
+            }
+
+            Divider()
+
+            Button {
+                viewModel.selectedClipId = clip.id
+                viewModel.splitSelectedClipAtPlayhead()
+            } label: {
+                Label("Dividir en Cabezal (⌘B)", systemImage: "scissors")
+            }
+
+            Button {
+                viewModel.selectedClipId = clip.id
+                viewModel.duplicateSelectedClip()
+            } label: {
+                Label("Duplicar en Nueva Capa (⌘D)", systemImage: "plus.square.on.square")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                viewModel.selectedClipId = clip.id
+                viewModel.deleteSelectedClip()
+            } label: {
+                Label("Eliminar Elemento (Delete)", systemImage: "trash")
+            }
         }
     }
 
@@ -564,5 +653,31 @@ public struct CanvasView: View {
             Circle()
                 .fill(fillColor)
         }
+    }
+
+    private func resolveFont(name: String?, size: CGFloat) -> Font {
+        guard let name = name, !name.isEmpty else {
+            return .system(size: size, weight: .bold)
+        }
+        if let nsFont = NSFont(name: name, size: size) {
+            return Font(nsFont)
+        }
+        return .custom(name, size: size)
+    }
+}
+
+/// Forma de recorte porcentual de bordes (Crop)
+public struct CropRectShape: Shape {
+    public var left: Double
+    public var right: Double
+    public var top: Double
+    public var bottom: Double
+
+    public func path(in rect: CGRect) -> Path {
+        let x = rect.minX + rect.width * CGFloat(max(0, min(0.48, left)))
+        let y = rect.minY + rect.height * CGFloat(max(0, min(0.48, top)))
+        let w = rect.width * CGFloat(max(0.01, 1.0 - left - right))
+        let h = rect.height * CGFloat(max(0.01, 1.0 - top - bottom))
+        return Path(CGRect(x: x, y: y, width: w, height: h))
     }
 }

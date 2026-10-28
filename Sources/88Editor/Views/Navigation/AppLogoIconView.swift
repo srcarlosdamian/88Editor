@@ -12,7 +12,7 @@ public struct AppLogoIconView: View {
     }
 
     public var body: some View {
-        if let iconImage = loadAppIcon() {
+        if let iconImage = AppLogoIconView.getAppIconImage() {
             Image(nsImage: iconImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -26,7 +26,7 @@ public struct AppLogoIconView: View {
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Color(red: 0.9, green: 0.1, blue: 0.1))
+                    .fill(Color(red: 0.15, green: 0.15, blue: 0.17))
                     .frame(width: size, height: size)
 
                 Text("88")
@@ -36,7 +36,7 @@ public struct AppLogoIconView: View {
         }
     }
 
-    private func loadAppIcon() -> NSImage? {
+    public static func getAppIconImage() -> NSImage? {
         if let url = Bundle.module.url(forResource: "AppIcon_Rounded", withExtension: "png"),
            let img = NSImage(contentsOf: url) {
             return img
@@ -47,6 +47,32 @@ public struct AppLogoIconView: View {
         if let raw = NSImage(contentsOfFile: "Sources/88Editor/Resources/AppIcon.png") {
             return raw
         }
-        return nil
+        // Generación programática de alta fidelidad si no se encuentra el asset
+        let dim: CGFloat = 512
+        let image = NSImage(size: NSSize(width: dim, height: dim))
+        image.lockFocus()
+
+        let rect = NSRect(x: 0, y: 0, width: dim, height: dim)
+        let bgPath = NSBezierPath(roundedRect: rect, xRadius: 110, yRadius: 110)
+        NSColor(red: 0.12, green: 0.12, blue: 0.15, alpha: 1.0).setFill()
+        bgPath.fill()
+
+        let text = "88"
+        let font = NSFont.systemFont(ofSize: 220, weight: .black)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white
+        ]
+        let textSize = text.size(withAttributes: attrs)
+        let textRect = NSRect(
+            x: (dim - textSize.width) / 2,
+            y: (dim - textSize.height) / 2 - 10,
+            width: textSize.width,
+            height: textSize.height
+        )
+        text.draw(in: textRect, withAttributes: attrs)
+
+        image.unlockFocus()
+        return image
     }
 }

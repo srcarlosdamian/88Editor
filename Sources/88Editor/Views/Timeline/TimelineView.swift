@@ -51,24 +51,20 @@ public struct TimelineView: View {
 
                 Divider().frame(height: 16)
 
-                // Menú Añadir Pistas
-                Menu {
-                    Button("Añadir Pista de Video (V)") {
-                        viewModel.addTrack(kind: .video)
-                    }
-                    Button("Añadir Pista de Audio (A)") {
-                        viewModel.addTrack(kind: .audio)
-                    }
+                // Botón Añadir Capa (El concepto unificado de 88 Editor son Capas)
+                Button {
+                    viewModel.addTrack(kind: .video)
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "plus.rectangle.on.rectangle")
+                        Image(systemName: "plus.square.dashed")
                             .font(.system(size: 11))
-                        Text("Pista")
+                        Text("Capa")
                             .font(.system(size: 11, weight: .medium))
                     }
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Añadir nueva capa al proyecto")
 
                 // Menú Insertar Objetos Vectoriales (Texto y Formas)
                 Menu {
@@ -97,6 +93,59 @@ public struct TimelineView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .help("Insertar objetos vectoriales (texto y formas) con calidad infinita")
+
+                Divider().frame(height: 16)
+
+                // Herramientas de Área de Trabajo y Rango de Renderizado (Puntos In y Out)
+                HStack(spacing: 4) {
+                    Button {
+                        viewModel.setWorkAreaInAtPlayhead()
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "arrow.right.to.line")
+                                .font(.system(size: 9))
+                            Text("In (I)")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Fijar punto de entrada para recortar renderizado al cabezal actual (Tecla I)")
+
+                    Button {
+                        viewModel.setWorkAreaOutAtPlayhead()
+                    } label: {
+                        HStack(spacing: 2) {
+                            Text("Out (O)")
+                                .font(.system(size: 10, weight: .medium))
+                            Image(systemName: "arrow.left.to.line")
+                                .font(.system(size: 9))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Fijar punto de salida para recortar renderizado al cabezal actual (Tecla O)")
+
+                    if viewModel.project.hasCustomWorkArea {
+                        Button {
+                            viewModel.resetWorkArea()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
+                        .help("Restablecer rango de renderizado a todo el proyecto (⌥X)")
+
+                        Text(String(format: "%.1fs - %.1fs (%.1fs)", viewModel.project.effectiveRenderIn, viewModel.project.effectiveRenderOut, viewModel.project.effectiveRenderDuration))
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.18))
+                            .foregroundColor(.accentColor)
+                            .cornerRadius(4)
+                    }
+                }
 
                 Divider().frame(height: 16)
 
@@ -245,14 +294,14 @@ public struct TimelineView: View {
                         }
 
                         HStack(spacing: 10) {
-                            Button("+ Pista Video (V1)") {
+                            Button("+ Nueva Capa") {
                                 viewModel.addTrack(kind: .video)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
 
-                            Button("+ Pista Audio (A1)") {
-                                viewModel.addTrack(kind: .audio)
+                            Button("Importar Medios...") {
+                                viewModel.promptImportMediaPanel()
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -275,7 +324,7 @@ public struct TimelineView: View {
                                         .fill(Color(NSColor.controlBackgroundColor))
                                         .frame(width: headerWidth, height: 26)
                                         .overlay(
-                                            Text("PISTAS")
+                                            Text("CAPAS")
                                                 .font(.system(size: 9, weight: .bold))
                                                 .foregroundColor(.secondary)
                                                 .padding(.leading, 10),
@@ -291,8 +340,19 @@ public struct TimelineView: View {
                                     TimelineRulerView(
                                         duration: max(viewModel.project.totalDuration, Double(effectiveLaneWidth) / viewModel.timelineZoom),
                                         zoom: viewModel.timelineZoom,
+                                        workAreaIn: viewModel.project.workAreaIn,
+                                        workAreaOut: viewModel.project.workAreaOut,
                                         onSeek: { newTime in
                                             viewModel.playbackEngine.seek(to: newTime)
+                                        },
+                                        onSetWorkAreaIn: { newIn in
+                                            viewModel.setWorkAreaIn(to: newIn)
+                                        },
+                                        onSetWorkAreaOut: { newOut in
+                                            viewModel.setWorkAreaOut(to: newOut)
+                                        },
+                                        onResetWorkArea: {
+                                            viewModel.resetWorkArea()
                                         }
                                     )
                                     .frame(width: effectiveLaneWidth, height: 26)
@@ -384,6 +444,18 @@ public struct TimelineView: View {
                 }
             }
         }
+        // Atajos de teclado del Timeline: I (Punto Entrada), O (Punto Salida), ⌥X (Restablecer Rango)
+        .background(
+            ZStack {
+                Button("") { viewModel.setWorkAreaInAtPlayhead() }
+                    .keyboardShortcut("i", modifiers: [])
+                Button("") { viewModel.setWorkAreaOutAtPlayhead() }
+                    .keyboardShortcut("o", modifiers: [])
+                Button("") { viewModel.resetWorkArea() }
+                    .keyboardShortcut("x", modifiers: [.option])
+            }
+            .opacity(0)
+        )
     }
 
     private func handleDropToEmptyTimeline(providers: [NSItemProvider]) -> Bool {
