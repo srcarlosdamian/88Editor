@@ -197,10 +197,6 @@ public struct CanvasView: View {
                     ZStack {
                         config.backgroundColor.swiftUIColor
                             .contentShape(Rectangle())
-                            .onTapGesture {
-                                viewModel.selectedClipId = nil
-                                viewModel.selectedTrackId = nil
-                            }
 
                         // Renderizado de Capas Visuales en estricto orden de jerarquía (de abajo hacia arriba)
                         ForEach(viewModel.activeVisualLayersAtPlayhead) { layer in
@@ -216,6 +212,16 @@ public struct CanvasView: View {
                     .frame(width: fittedWidth, height: fittedHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .coordinateSpace(name: "CanvasWorkspace")
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .named("CanvasWorkspace"))
+                            .onEnded { value in
+                                // Detecta clics precisos en el lienzo para seleccionar texto, formas o videos
+                                if hypot(value.translation.width, value.translation.height) < 5 {
+                                    handleCanvasClick(at: value.location, fittedWidth: fittedWidth, fittedHeight: fittedHeight)
+                                }
+                            }
+                    )
                     .shadow(color: Color.black.opacity(0.25), radius: 8, x: 0, y: 4)
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
@@ -348,6 +354,73 @@ public struct CanvasView: View {
         }
     }
 
+    // MARK: - Detección Precisa de Clics e Interacción en el Lienzo
+    private func isPointInsideElement(
+        point: CGPoint,
+        clip: TimelineClip,
+        fittedWidth: CGFloat,
+        fittedHeight: CGFloat
+    ) -> Bool {
+        let currentTime = viewModel.playbackEngine.currentTime
+        let dynamicScale = max(0.05, clip.scale(at: currentTime))
+        let dynamicRotation = clip.rotation(at: currentTime)
+        let dynamicPosX = clip.positionX(at: currentTime)
+        let dynamicPosY = clip.positionY(at: currentTime)
+        let (elemW, elemH) = calculateElementDimensions(clip: clip, fittedWidth: fittedWidth, fittedHeight: fittedHeight)
+
+        let originX = fittedWidth / 2.0
+        let originY = fittedHeight / 2.0
+        let centerX = originX + dynamicPosX
+        let centerY = originY + dynamicPosY
+
+        let effectiveW = max(50.0, elemW * CGFloat(dynamicScale))
+        let effectiveH = max(40.0, elemH * CGFloat(dynamicScale))
+
+        // Si no hay rotación apreciable, prueba cartesiana directa
+        if abs(dynamicRotation) < 0.5 {
+            let rect = CGRect(
+                x: centerX - effectiveW / 2.0,
+                y: centerY - effectiveH / 2.0,
+                width: effectiveW,
+                height: effectiveH
+            )
+            return rect.contains(point)
+        }
+
+        // Si el elemento está rotado, proyectamos el punto al sistema de coordenadas local del elemento
+        let rad = -dynamicRotation * .pi / 180.0
+        let dx = point.x - centerX
+        let dy = point.y - centerY
+        let localX = dx * cos(rad) - dy * sin(rad)
+        let localY = dx * sin(rad) + dy * cos(rad)
+
+        return abs(localX) <= effectiveW / 2.0 && abs(localY) <= effectiveH / 2.0
+    }
+
+    /// Encuentra el clip visual más alto en la jerarquía bajo el cursor del ratón
+    private func findTopmostClip(at point: CGPoint, fittedWidth: CGFloat, fittedHeight: CGFloat) -> TimelineClip? {
+        // En activeVisualLayersAtPlayhead, el elemento superior está al final (el elemento de arriba manda).
+        // Recorremos en orden inverso para que el elemento más frontal tenga prioridad absoluta:
+        for layer in viewModel.activeVisualLayersAtPlayhead.reversed() {
+            if isPointInsideElement(point: point, clip: layer.clip, fittedWidth: fittedWidth, fittedHeight: fittedHeight) {
+                return layer.clip
+            }
+        }
+        return nil
+    }
+
+    /// Gestiona la selección directa con el ratón al hacer clic sobre el lienzo
+    private func handleCanvasClick(at point: CGPoint, fittedWidth: CGFloat, fittedHeight: CGFloat) {
+        if let topClip = findTopmostClip(at: point, fittedWidth: fittedWidth, fittedHeight: fittedHeight) {
+            viewModel.selectedClipId = topClip.id
+            viewModel.selectedTrackId = topClip.trackId
+        } else {
+            // Clic en fondo vacío del lienzo: deselecciona
+            viewModel.selectedClipId = nil
+            viewModel.selectedTrackId = nil
+        }
+    }
+
     // MARK: - Cálculo de Dimensiones Reales del Elemento
     private func calculateElementDimensions(clip: TimelineClip, fittedWidth: CGFloat, fittedHeight: CGFloat) -> (CGFloat, CGFloat) {
         if clip.shapeType != nil {
@@ -357,9 +430,13 @@ public struct CanvasView: View {
             let fSize = clip.fontSize ?? 54.0
             let nsFont = NSFont(name: clip.fontName ?? "", size: fSize) ?? NSFont.systemFont(ofSize: fSize, weight: .bold)
             let attrs: [NSAttributedString.Key: Any] = [.font: nsFont]
-            let textSize = (text as NSString).size(withAttributes: attrs)
-            let w = max(160, textSize.width + 40)
-            let h = max(60, textSize.height + 30)
+            let rect = (text as NSString).boundingRect(
+                with: CGSize(width: max(200, fittedWidth - 40), height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: attrs
+            )
+            let w = max(140, ceil(rect.width) + 30)
+            let h = max(50, ceil(rect.height) + 24)
             return (min(fittedWidth, w), h)
         }
         if let asset = viewModel.asset(for: clip) {
@@ -437,6 +514,7 @@ public struct CanvasView: View {
             else if let shape = clip.shapeType {
                 renderVectorShape(shape: shape, fillHex: clip.fillColorHex ?? "#FF3B30", strokeHex: clip.strokeColorHex, strokeWidth: clip.strokeWidth ?? 0)
                     .frame(width: elemW, height: elemH)
+                    .contentShape(Rectangle())
             }
             // B) Video Nativo con aspecto original perfecto, ajuste en altura y recorte (Crop)
             else if let asset = layer.asset, asset.mediaType == .video {
@@ -445,8 +523,10 @@ public struct CanvasView: View {
                     asset: asset,
                     viewModel: viewModel
                 )
+                .allowsHitTesting(false)
                 .frame(width: elemW, height: elemH)
                 .clipShape(CropRectShape(left: clip.cropLeft, right: clip.cropRight, top: clip.cropTop, bottom: clip.cropBottom))
+                .contentShape(Rectangle())
             }
             // C) Imágenes estáticas con recorte (Crop)
             else if let asset = layer.asset, asset.mediaType == .image, let img = NSImage(contentsOf: asset.fileURL) {
@@ -455,6 +535,7 @@ public struct CanvasView: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: elemW, height: elemH)
                     .clipShape(CropRectShape(left: clip.cropLeft, right: clip.cropRight, top: clip.cropTop, bottom: clip.cropBottom))
+                    .contentShape(Rectangle())
             }
             // D) Texto Vectorial nítido con resolución robusta de fuentes
             else if let text = clip.textOverlay, !text.isEmpty {
@@ -467,17 +548,9 @@ public struct CanvasView: View {
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
                     .padding(10)
                     .frame(width: elemW, height: elemH)
+                    .contentShape(Rectangle())
             }
         }
-        .overlay(
-            // Detector de clic directo en el canvas para seleccionar el elemento
-            Color.white.opacity(0.0001)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    viewModel.selectedClipId = clip.id
-                    viewModel.selectedTrackId = clip.trackId
-                }
-        )
         .offset(x: dynamicPosX + currentDrag.width, y: dynamicPosY + currentDrag.height)
         .scaleEffect(dynamicScale * currentScaleMult)
         .rotationEffect(.degrees(dynamicRotation))
