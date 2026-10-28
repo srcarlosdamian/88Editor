@@ -607,12 +607,19 @@ public struct ExportSettingsSheet: View {
 
         if panel.runModal() == .OK, let outputURL = panel.url {
             let useWorkArea = (exportRange == .workAreaIfActive)
+            let exportConfig = ProjectConfiguration(
+                preset: .custom,
+                customWidth: customWidth,
+                customHeight: customHeight,
+                framerate: selectedFramerate
+            )
             viewModel.startConfiguredExport(
                 to: outputURL,
                 container: container,
                 quality: quality,
                 mediaType: mediaType,
-                useWorkArea: useWorkArea
+                useWorkArea: useWorkArea,
+                customConfiguration: exportConfig
             )
         }
     }

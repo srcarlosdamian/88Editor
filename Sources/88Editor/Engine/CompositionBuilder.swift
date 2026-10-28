@@ -4,7 +4,8 @@ import CoreMedia
 
 /// Constructor de composición para AVFoundation en 88 Editor.
 /// Genera AVMutableComposition, AVMutableVideoComposition y AVMutableAudioMix
-/// garantizando reproducción de video fluido y audio sincronizado tanto en pistas de video como de audio.
+/// garantizando reproducción y exportación perfecta de Videos, Imágenes, Textos y Formas Vectoriales
+/// con animaciones de Keyframes en todas las pistas.
 public final class CompositionBuilder {
 
     public struct CompositionResult {
@@ -14,7 +15,7 @@ public final class CompositionBuilder {
         public let totalDuration: CMTime
     }
 
-    /// Construye una composición completa de AVFoundation con video y audio entrelazados.
+    /// Construye una composición completa de AVFoundation con video, imágenes, animaciones y audio entrelazados.
     public static func build(
         tracks: [TimelineTrack],
         assets: [UUID: MediaAsset],
@@ -23,24 +24,56 @@ public final class CompositionBuilder {
         let composition = AVMutableComposition()
         var audioMixParameters: [AVMutableAudioMixInputParameters] = []
 
-        struct VideoClipPlacement {
-            let clip: TimelineClip
-            let sourceTrack: AVAssetTrack
-        }
-        var videoTrackPlacements: [(compTrack: AVMutableCompositionTrack, clips: [VideoClipPlacement])] = []
+        var trackToCompID: [UUID: CMPersistentTrackID] = [:]
+        var requiredTrackIDs: [NSValue] = []
 
-        // Filtramos pistas visibles
+        // 1. Calcular duración total real del proyecto
+        let maxClipEnd = tracks.flatMap { $0.clips }.map { $0.endTime }.max() ?? 0.0
+        let totalDurationSeconds = max(maxClipEnd, 1.0)
+        let totalDurationCMTime = CMTime(seconds: totalDurationSeconds, preferredTimescale: 600)
+
+        // 2. Insertar Pista Base Maestra de Video (Garantiza reloj continuo para exportar fotos/texto/audio)
+        if let blankTrack = try? await BlankVideoTrackGenerator.getOrCreateBlankVideoTrack(),
+           let compMasterTrack = composition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+           ) {
+            let loopCount = Int(ceil(totalDurationSeconds))
+            for i in 0..<loopCount {
+                let insertAt = CMTime(seconds: Double(i), preferredTimescale: 600)
+                let remaining = totalDurationSeconds - Double(i)
+                let dur = min(1.0, remaining)
+                let range = CMTimeRange(start: .zero, duration: CMTime(seconds: dur, preferredTimescale: 600))
+                try? compMasterTrack.insertTimeRange(range, of: blankTrack, at: insertAt)
+            }
+        }
+
+        // 3. Procesar pistas de usuario (Videos, Imágenes, Textos y Audio)
         for track in tracks {
             guard !track.isHidden else { continue }
 
             if track.kind == .video {
-                // 1. Pista de Video en la composición
-                guard let compVideoTrack = composition.addMutableTrack(
-                    withMediaType: .video,
-                    preferredTrackID: kCMPersistentTrackID_Invalid
-                ) else { continue }
+                // Verificar si esta pista contiene clips de video reales que requieran decodificación hardware
+                let hasVideoClips = track.clips.contains { clip in
+                    if let asset = assets[clip.assetId], asset.mediaType == .video {
+                        return true
+                    }
+                    return false
+                }
 
-                // 2. Pista de Audio complementaria para el sonido propio de los videos
+                var compVideoTrack: AVMutableCompositionTrack?
+                if hasVideoClips {
+                    compVideoTrack = composition.addMutableTrack(
+                        withMediaType: .video,
+                        preferredTrackID: kCMPersistentTrackID_Invalid
+                    )
+                    if let cvt = compVideoTrack {
+                        trackToCompID[track.id] = cvt.trackID
+                        requiredTrackIDs.append(NSNumber(value: cvt.trackID) as NSValue)
+                    }
+                }
+
+                // Pista de Audio complementaria para el sonido propio de los videos en esta pista
                 let compAudioTrack = composition.addMutableTrack(
                     withMediaType: .audio,
                     preferredTrackID: kCMPersistentTrackID_Invalid
@@ -56,7 +89,6 @@ public final class CompositionBuilder {
 
                 // Ordenamos clips secuencialmente por tiempo de inicio
                 let sortedClips = track.clips.sorted { $0.startTime < $1.startTime }
-                var trackVideoClips: [VideoClipPlacement] = []
 
                 for clip in sortedClips {
                     guard let assetMeta = assets[clip.assetId] else { continue }
@@ -67,17 +99,14 @@ public final class CompositionBuilder {
                     let clipDuration = CMTime(seconds: clip.duration, preferredTimescale: 600)
                     let sourceTimeRange = CMTimeRange(start: sourceInTime, duration: clipDuration)
 
-                    // A) Insertar canal de Video
-                    if let sourceVideoTrack = try? await avAsset.loadTracks(withMediaType: .video).first {
-                        do {
-                            try compVideoTrack.insertTimeRange(sourceTimeRange, of: sourceVideoTrack, at: clipStartTime)
-                            trackVideoClips.append(VideoClipPlacement(clip: clip, sourceTrack: sourceVideoTrack))
-                        } catch {
-                            print("[88 Editor] Error insertando pista de video: \(error.localizedDescription)")
+                    // A) Si es video: insertar en la pista de video para decodificación de fotogramas
+                    if assetMeta.mediaType == .video, let compTrack = compVideoTrack {
+                        if let sourceVideoTrack = try? await avAsset.loadTracks(withMediaType: .video).first {
+                            try? compTrack.insertTimeRange(sourceTimeRange, of: sourceVideoTrack, at: clipStartTime)
                         }
                     }
 
-                    // B) Insertar canal de Audio integrado del video (si el archivo tiene sonido)
+                    // B) Audio integrado del archivo de video
                     if let audioTrack = compAudioTrack,
                        let sourceAudioTrack = try? await avAsset.loadTracks(withMediaType: .audio).first {
                         do {
@@ -95,10 +124,6 @@ public final class CompositionBuilder {
                             print("[88 Editor] Error insertando audio de video: \(error.localizedDescription)")
                         }
                     }
-                }
-
-                if !trackVideoClips.isEmpty {
-                    videoTrackPlacements.append((compTrack: compVideoTrack, clips: trackVideoClips))
                 }
 
                 if let params = videoAudioParams {
@@ -157,93 +182,31 @@ public final class CompositionBuilder {
             audioMix = mix
         }
 
-        // Construir VideoComposition si hay pistas de video presentes
-        var videoComposition: AVVideoComposition?
-        if !videoTrackPlacements.isEmpty, let config = configuration {
-            let targetW = CGFloat(config.width)
-            let targetH = CGFloat(config.height)
-            let totalDur = composition.duration
+        // 4. Construir VideoComposition con el Compositor Multicapa Profesional (EditorVideoCompositor)
+        let config = configuration ?? ProjectConfiguration(preset: .fullHD16x9, customWidth: 1920, customHeight: 1080, framerate: .fps30)
+        let targetW = CGFloat(config.width)
+        let targetH = CGFloat(config.height)
 
-            if totalDur.seconds > 0 {
-                let instruction = AVMutableVideoCompositionInstruction()
-                instruction.timeRange = CMTimeRange(start: .zero, duration: totalDur)
+        let mutableVideoComp = AVMutableVideoComposition()
+        mutableVideoComp.customVideoCompositorClass = EditorVideoCompositor.self
+        mutableVideoComp.renderSize = CGSize(width: targetW, height: targetH)
+        mutableVideoComp.frameDuration = CMTime(value: 1, timescale: CMTimeScale(config.framerate.rawValue))
 
-                var layerInstructions: [AVMutableVideoCompositionLayerInstruction] = []
+        let instruction = EditorVideoCompositionInstruction(
+            timeRange: CMTimeRange(start: .zero, duration: totalDurationCMTime),
+            tracks: tracks,
+            assets: assets,
+            trackToCompID: trackToCompID,
+            configuration: config,
+            requiredSourceTrackIDs: requiredTrackIDs.isEmpty ? nil : requiredTrackIDs
+        )
+        mutableVideoComp.instructions = [instruction]
 
-                for placement in videoTrackPlacements {
-                    let layerInst = AVMutableVideoCompositionLayerInstruction(assetTrack: placement.compTrack)
-
-                    for item in placement.clips {
-                        let clip = item.clip
-                        let sourceTrack = item.sourceTrack
-                        let clipStart = CMTime(seconds: clip.startTime, preferredTimescale: 600)
-                        let clipEnd = CMTime(seconds: clip.endTime, preferredTimescale: 600)
-
-                        // 1. Obtener orientación y dimensiones reales del video fuente
-                        let naturalSize = (try? await sourceTrack.load(.naturalSize)) ?? .zero
-                        let prefTransform = (try? await sourceTrack.load(.preferredTransform)) ?? .identity
-                        let orientedSize = naturalSize.applying(prefTransform)
-                        let orientedW = abs(orientedSize.width)
-                        let orientedH = abs(orientedSize.height)
-
-                        guard orientedW > 0, orientedH > 0 else { continue }
-
-                        // 2. Ajuste al 100% en altura del visor ("siempre ajusta en altura")
-                        let baseScale = targetH / orientedH
-                        let userScale = CGFloat(clip.scale)
-                        let finalScale = baseScale * userScale
-
-                        let scaledW = orientedW * finalScale
-                        let scaledH = orientedH * finalScale
-
-                        // 3. Posicionamiento centrado + offsets de usuario
-                        let posX = (targetW - scaledW) / 2.0 + CGFloat(clip.positionX)
-                        let posY = (targetH - scaledH) / 2.0 - CGFloat(clip.positionY)
-
-                        var t = prefTransform
-                        t = t.concatenating(CGAffineTransform(scaleX: finalScale, y: finalScale))
-                        t = t.concatenating(CGAffineTransform(translationX: posX, y: posY))
-
-                        layerInst.setTransform(t, at: clipStart)
-                        layerInst.setOpacity(Float(clip.opacity), at: clipStart)
-                        layerInst.setOpacity(0.0, at: clipEnd)
-
-                        if clip.hasCrop {
-                            let cropX = scaledW * CGFloat(clip.cropLeft)
-                            let cropY = scaledH * CGFloat(clip.cropTop)
-                            let cropW = scaledW * CGFloat(max(0.01, 1.0 - clip.cropLeft - clip.cropRight))
-                            let cropH = scaledH * CGFloat(max(0.01, 1.0 - clip.cropTop - clip.cropBottom))
-                            let cropRect = CGRect(x: cropX, y: cropY, width: cropW, height: cropH)
-                            layerInst.setCropRectangle(cropRect, at: clipStart)
-                        }
-                    }
-
-                    layerInstructions.append(layerInst)
-                }
-
-                instruction.layerInstructions = layerInstructions
-
-                let mutableVideoComp = AVMutableVideoComposition()
-                mutableVideoComp.renderSize = CGSize(width: targetW, height: targetH)
-                mutableVideoComp.frameDuration = CMTime(value: 1, timescale: CMTimeScale(config.framerate.rawValue))
-                mutableVideoComp.instructions = [instruction]
-                videoComposition = mutableVideoComp
-            }
-        } else if !composition.tracks(withMediaType: .video).isEmpty {
-            let mutableVideoComp = AVMutableVideoComposition(propertiesOf: composition)
-            if let config = configuration {
-                mutableVideoComp.renderSize = CGSize(width: config.width, height: config.height)
-                mutableVideoComp.frameDuration = CMTime(value: 1, timescale: CMTimeScale(config.framerate.rawValue))
-            }
-            videoComposition = mutableVideoComp
-        }
-
-        let duration = composition.duration
         return CompositionResult(
             composition: composition,
-            videoComposition: videoComposition,
+            videoComposition: mutableVideoComp,
             audioMix: audioMix,
-            totalDuration: duration
+            totalDuration: totalDurationCMTime
         )
     }
 

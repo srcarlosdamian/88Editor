@@ -1783,7 +1783,8 @@ public final class EditorViewModel: ObservableObject {
         container: ExportContainer,
         quality: ExportQuality,
         mediaType: ExportMediaType,
-        useWorkArea: Bool
+        useWorkArea: Bool,
+        customConfiguration: ProjectConfiguration? = nil
     ) {
         try? FileManager.default.removeItem(at: outputURL)
 
@@ -1791,11 +1792,13 @@ public final class EditorViewModel: ObservableObject {
         exportProgress = 0.0
         exportStatusMessage = "Preparando composición de medios..."
 
+        let exportConfig = customConfiguration ?? project.configuration
+
         Task {
             let compResult = await CompositionBuilder.build(
                 tracks: project.tracks,
                 assets: assetsById,
-                configuration: project.configuration
+                configuration: exportConfig
             )
 
             await MainActor.run {
