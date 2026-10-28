@@ -397,14 +397,20 @@ public struct TimelineView: View {
                             let tracksTotalHeight = CGFloat(viewModel.project.tracks.count) * viewModel.trackHeight
                             ScrollView(.vertical, showsIndicators: false) {
                                 ZStack(alignment: .topLeading) {
-                                    // Fondo interactivo para deseleccionar al hacer clic en área vacía fuera de las pistas
+                                    // Fondo interactivo: clic o arrastre en área vacía mueve el cabezal (Seek) y deselecciona clips
                                     Color.clear
                                         .frame(width: effectiveLaneWidth + headerWidth, height: max(geo.size.height - 27, tracksTotalHeight + 120))
                                         .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            viewModel.selectedClipId = nil
-                                            viewModel.selectedTrackId = nil
-                                        }
+                                        .gesture(
+                                            DragGesture(minimumDistance: 0)
+                                                .onChanged { value in
+                                                    let trackLaneX = value.location.x - headerWidth
+                                                    let clickedTime = max(0.0, Double(trackLaneX) / viewModel.timelineZoom)
+                                                    viewModel.playbackEngine.seek(to: clickedTime)
+                                                    viewModel.selectedClipId = nil
+                                                    viewModel.selectedTrackId = nil
+                                                }
+                                        )
 
                                     VStack(alignment: .leading, spacing: 0) {
                                         ForEach(viewModel.project.tracks) { track in

@@ -1,57 +1,4 @@
 import SwiftUI
-import AppKit
-
-/// Control nativo AppKit NSView para el arrastre y clic inmediato en la regla temporal.
-/// Garantiza respuesta instantánea al ratón en macOS sin interferencias de scrollviews o capas superpuestas.
-final class NativeTimelineRulerScrubber: NSView {
-    var onSeek: ((Double) -> Void)?
-    var zoom: Double = 60.0
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-    }
-
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(bounds, cursor: .crosshair)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        handleSeek(event: event)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        handleSeek(event: event)
-    }
-
-    private func handleSeek(event: NSEvent) {
-        let loc = convert(event.locationInWindow, from: nil)
-        let safeZoom = max(1.0, zoom)
-        let clickedTime = max(0.0, Double(loc.x) / safeZoom)
-        onSeek?(clickedTime)
-    }
-}
-
-struct NativeRulerScrubberRepresentable: NSViewRepresentable {
-    let zoom: Double
-    let onSeek: (Double) -> Void
-
-    func makeNSView(context: Context) -> NativeTimelineRulerScrubber {
-        let view = NativeTimelineRulerScrubber()
-        view.zoom = zoom
-        view.onSeek = onSeek
-        return view
-    }
-
-    func updateNSView(_ nsView: NativeTimelineRulerScrubber, context: Context) {
-        nsView.zoom = zoom
-        nsView.onSeek = onSeek
-    }
-}
 
 /// Regla temporal interactiva graduada en segundos con marcas de tiempo,
 /// soporte de Área de Trabajo / Rango de Renderizado (Puntos In y Out) arrastrables y atajos de teclado (I / O / ⌥X).
@@ -65,9 +12,6 @@ public struct TimelineRulerView: View {
     var onSetWorkAreaOut: ((Double) -> Void)? = nil
     var onShiftWorkArea: ((Double) -> Void)? = nil
     var onResetWorkArea: (() -> Void)? = nil
-
-    @State private var dragInitialIn: Double? = nil
-    @State private var dragInitialOut: Double? = nil
 
     public init(
         duration: Double,
@@ -97,6 +41,7 @@ public struct TimelineRulerView: View {
             let totalSeconds = Int(ceil(Double(totalWidth) / zoom))
 
             // Rango de renderizado / In & Out
+            let hasCustomArea = workAreaIn != nil || workAreaOut != nil
             let effIn = max(0.0, workAreaIn ?? 0.0)
             let effOut = max(effIn + 0.1, min(duration, workAreaOut ?? duration))
             let inX = CGFloat(effIn) * CGFloat(zoom)
@@ -132,7 +77,7 @@ public struct TimelineRulerView: View {
                 }
 
                 // 3. Franja visual del Área de Trabajo (In / Out) decorativa (no intercepta clics)
-                if outX > inX {
+                if hasCustomArea && outX > inX {
                     ZStack(alignment: .top) {
                         Rectangle()
                             .fill(Color.white.opacity(0.08))
@@ -147,57 +92,55 @@ public struct TimelineRulerView: View {
                     .allowsHitTesting(false)
                 }
 
-                // 4. Capturador nativo de clics y arrastre en la regla (100% confiable y fluido)
-                NativeRulerScrubberRepresentable(zoom: zoom, onSeek: onSeek)
-                    .frame(width: totalWidth, height: 26)
-
-                // 5. Extremo Izquierdo: Corchete de Entrada (Punto In `[`)
-                WorkAreaBracketShape(isLeft: true)
-                    .fill(Color.white)
-                    .frame(width: 12, height: 22)
-                    .position(x: inX + 6, y: 13)
-                    .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
-                    .contentShape(Rectangle())
-                    .help("Extremo In: Arrastrar para ajustar punto de entrada")
-                    .zIndex(20)
-                    .onHover { hovering in
-                        if hovering {
-                            NSCursor.resizeLeftRight.push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
-                    .gesture(
-                        DragGesture()
-                            .onChanged { val in
-                                let newTime = max(0, min(effOut - 0.1, Double(val.location.x) / zoom))
-                                onSetWorkAreaIn?(newTime)
+                // 4. Extremo Izquierdo: Corchete de Entrada (Punto In `[`)
+                if hasCustomArea {
+                    WorkAreaBracketShape(isLeft: true)
+                        .fill(Color.white)
+                        .frame(width: 12, height: 22)
+                        .position(x: inX + 6, y: 13)
+                        .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
+                        .contentShape(Rectangle())
+                        .help("Extremo In: Arrastrar para ajustar punto de entrada")
+                        .zIndex(20)
+                        .onHover { hovering in
+                            if hovering {
+                                NSCursor.resizeLeftRight.push()
+                            } else {
+                                NSCursor.pop()
                             }
-                    )
-
-                // 6. Extremo Derecho: Corchete de Salida (Punto Out `]`)
-                WorkAreaBracketShape(isLeft: false)
-                    .fill(Color.white)
-                    .frame(width: 12, height: 22)
-                    .position(x: outX - 6, y: 13)
-                    .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
-                    .contentShape(Rectangle())
-                    .help("Extremo Out: Arrastrar para ajustar punto de salida")
-                    .zIndex(20)
-                    .onHover { hovering in
-                        if hovering {
-                            NSCursor.resizeLeftRight.push()
-                        } else {
-                            NSCursor.pop()
                         }
-                    }
-                    .gesture(
-                        DragGesture()
-                            .onChanged { val in
-                                let newTime = max(effIn + 0.1, min(duration, Double(val.location.x) / zoom))
-                                onSetWorkAreaOut?(newTime)
+                        .highPriorityGesture(
+                            DragGesture()
+                                .onChanged { val in
+                                    let newTime = max(0, min(effOut - 0.1, Double(val.location.x) / zoom))
+                                    onSetWorkAreaIn?(newTime)
+                                }
+                        )
+
+                    // 5. Extremo Derecho: Corchete de Salida (Punto Out `]`)
+                    WorkAreaBracketShape(isLeft: false)
+                        .fill(Color.white)
+                        .frame(width: 12, height: 22)
+                        .position(x: outX - 6, y: 13)
+                        .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
+                        .contentShape(Rectangle())
+                        .help("Extremo Out: Arrastrar para ajustar punto de salida")
+                        .zIndex(20)
+                        .onHover { hovering in
+                            if hovering {
+                                NSCursor.resizeLeftRight.push()
+                            } else {
+                                NSCursor.pop()
                             }
-                    )
+                        }
+                        .highPriorityGesture(
+                            DragGesture()
+                                .onChanged { val in
+                                    let newTime = max(effIn + 0.1, min(duration, Double(val.location.x) / zoom))
+                                    onSetWorkAreaOut?(newTime)
+                                }
+                        )
+                }
 
                 // Línea inferior divisoria
                 Rectangle()
@@ -206,6 +149,14 @@ public struct TimelineRulerView: View {
                     .allowsHitTesting(false)
             }
             .frame(width: totalWidth, height: 26)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let clickedTime = max(0, Double(value.location.x) / zoom)
+                        onSeek(clickedTime)
+                    }
+            )
             .contextMenu {
                 Button {
                     onSetWorkAreaIn?(effIn)
@@ -219,12 +170,14 @@ public struct TimelineRulerView: View {
                     Label("Fijar Punto de Salida aquí (O)", systemImage: "arrow.left.to.line")
                 }
 
-                Divider()
+                if hasCustomArea {
+                    Divider()
 
-                Button {
-                    onResetWorkArea?()
-                } label: {
-                    Label("Abarcar Duración Completa (⌥X)", systemImage: "arrow.counterclockwise")
+                    Button {
+                        onResetWorkArea?()
+                    } label: {
+                        Label("Restablecer Rango de Renderizado (⌥X)", systemImage: "arrow.counterclockwise")
+                    }
                 }
             }
         }

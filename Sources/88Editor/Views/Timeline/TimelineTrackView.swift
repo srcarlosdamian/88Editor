@@ -187,15 +187,20 @@ public struct TimelineTrackView: View {
 
             // Carril de clips expansivo que ocupa el 100% del ancho disponible
             ZStack(alignment: .leading) {
-                // Fondo del carril
+                // Fondo del carril con clic/arrastre inmediato para mover el cabezal (Seek)
                 Rectangle()
                     .fill(isDropTargeted ? Color.white.opacity(0.12) : Color(NSColor.underPageBackgroundColor).opacity(0.5))
                     .frame(width: timelineWidth, height: currentHeight)
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        viewModel.selectedClipId = nil
-                        viewModel.selectedTrackId = track.id
-                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                let clickedTime = max(0.0, Double(value.location.x) / viewModel.timelineZoom)
+                                viewModel.playbackEngine.seek(to: clickedTime)
+                                viewModel.selectedClipId = nil
+                                viewModel.selectedTrackId = track.id
+                            }
+                    )
                     .contextMenu {
                         if viewModel.clipboardClip != nil {
                             Button {
