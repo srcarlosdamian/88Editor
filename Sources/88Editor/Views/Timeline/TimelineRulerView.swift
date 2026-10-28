@@ -1,4 +1,57 @@
 import SwiftUI
+import AppKit
+
+/// Control nativo AppKit NSView para el arrastre y clic inmediato en la regla temporal.
+/// Garantiza respuesta instantánea al ratón en macOS sin interferencias de scrollviews o capas superpuestas.
+final class NativeTimelineRulerScrubber: NSView {
+    var onSeek: ((Double) -> Void)?
+    var zoom: Double = 60.0
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .crosshair)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        handleSeek(event: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        handleSeek(event: event)
+    }
+
+    private func handleSeek(event: NSEvent) {
+        let loc = convert(event.locationInWindow, from: nil)
+        let safeZoom = max(1.0, zoom)
+        let clickedTime = max(0.0, Double(loc.x) / safeZoom)
+        onSeek?(clickedTime)
+    }
+}
+
+struct NativeRulerScrubberRepresentable: NSViewRepresentable {
+    let zoom: Double
+    let onSeek: (Double) -> Void
+
+    func makeNSView(context: Context) -> NativeTimelineRulerScrubber {
+        let view = NativeTimelineRulerScrubber()
+        view.zoom = zoom
+        view.onSeek = onSeek
+        return view
+    }
+
+    func updateNSView(_ nsView: NativeTimelineRulerScrubber, context: Context) {
+        nsView.zoom = zoom
+        nsView.onSeek = onSeek
+    }
+}
 
 /// Regla temporal interactiva graduada en segundos con marcas de tiempo,
 /// soporte de Área de Trabajo / Rango de Renderizado (Puntos In y Out) arrastrables y atajos de teclado (I / O / ⌥X).
@@ -43,7 +96,7 @@ public struct TimelineRulerView: View {
             let totalWidth = max(geo.size.width, CGFloat(duration) * CGFloat(zoom))
             let totalSeconds = Int(ceil(Double(totalWidth) / zoom))
 
-            // Por defecto abarca todo el canvas/timeline, y se mueve libremente con el mouse
+            // Rango de renderizado / In & Out
             let effIn = max(0.0, workAreaIn ?? 0.0)
             let effOut = max(effIn + 0.1, min(duration, workAreaOut ?? duration))
             let inX = CGFloat(effIn) * CGFloat(zoom)
@@ -51,16 +104,8 @@ public struct TimelineRulerView: View {
             let barWidth = max(4, outX - inX)
 
             ZStack(alignment: .bottomLeading) {
-                // 1. Fondo base de la regla con clic para mover el cabezal (Seek)
+                // 1. Fondo base de la regla
                 Color(NSColor.controlBackgroundColor)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                let clickedTime = max(0, Double(value.location.x) / zoom)
-                                onSeek(clickedTime)
-                            }
-                    )
 
                 // 2. Marcas de tiempo y números
                 ForEach(0...totalSeconds, id: \.self) { second in
@@ -86,7 +131,7 @@ public struct TimelineRulerView: View {
                     .allowsHitTesting(false)
                 }
 
-                // 3. Franja visual del Área de Trabajo (NO bloquea el avance del timeline; permite avanzar libremente)
+                // 3. Franja visual del Área de Trabajo (In / Out) decorativa (no intercepta clics)
                 if outX > inX {
                     ZStack(alignment: .top) {
                         Rectangle()
@@ -99,18 +144,22 @@ public struct TimelineRulerView: View {
                             .frame(width: barWidth, height: 3.0)
                     }
                     .position(x: inX + barWidth / 2, y: 13)
-                    .allowsHitTesting(false) // Permite hacer clic o arrastrar en cualquier parte de la regla para avanzar
+                    .allowsHitTesting(false)
                 }
 
-                // 4. Extremo Izquierdo: Corchete de Entrada (Punto In `[`)
+                // 4. Capturador nativo de clics y arrastre en la regla (100% confiable y fluido)
+                NativeRulerScrubberRepresentable(zoom: zoom, onSeek: onSeek)
+                    .frame(width: totalWidth, height: 26)
+
+                // 5. Extremo Izquierdo: Corchete de Entrada (Punto In `[`)
                 WorkAreaBracketShape(isLeft: true)
                     .fill(Color.white)
-                    .frame(width: 9, height: 18)
-                    .position(x: inX + 4.5, y: 13)
+                    .frame(width: 12, height: 22)
+                    .position(x: inX + 6, y: 13)
                     .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
-                    .contentShape(Rectangle().inset(by: -4))
+                    .contentShape(Rectangle())
                     .help("Extremo In: Arrastrar para ajustar punto de entrada")
-                    .zIndex(10)
+                    .zIndex(20)
                     .onHover { hovering in
                         if hovering {
                             NSCursor.resizeLeftRight.push()
@@ -126,15 +175,15 @@ public struct TimelineRulerView: View {
                             }
                     )
 
-                // 5. Extremo Derecho: Corchete de Salida (Punto Out `]`)
+                // 6. Extremo Derecho: Corchete de Salida (Punto Out `]`)
                 WorkAreaBracketShape(isLeft: false)
                     .fill(Color.white)
-                    .frame(width: 9, height: 18)
-                    .position(x: outX - 4.5, y: 13)
+                    .frame(width: 12, height: 22)
+                    .position(x: outX - 6, y: 13)
                     .shadow(color: Color.black.opacity(0.6), radius: 2, x: 0, y: 1)
-                    .contentShape(Rectangle().inset(by: -4))
+                    .contentShape(Rectangle())
                     .help("Extremo Out: Arrastrar para ajustar punto de salida")
-                    .zIndex(10)
+                    .zIndex(20)
                     .onHover { hovering in
                         if hovering {
                             NSCursor.resizeLeftRight.push()
