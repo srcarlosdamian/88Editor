@@ -686,8 +686,8 @@ public final class EditorViewModel: ObservableObject {
         )
         project.assets.append(asset)
 
-        let layerNumber = project.tracks.count + 1
-        let targetTrack = TimelineTrack(name: "Capa \(layerNumber) - \(assetName)", kind: .video)
+        let layerNumber = project.tracks.filter { $0.kind == .video }.count + 1
+        let targetTrack = TimelineTrack(name: "Texto \(layerNumber)", kind: .video)
         project.tracks.insert(targetTrack, at: 0) // Capa superior en la jerarquía (el elemento de arriba manda)
 
         let clip = TimelineClip(
@@ -733,8 +733,8 @@ public final class EditorViewModel: ObservableObject {
         )
         project.assets.append(asset)
 
-        let layerNumber = project.tracks.count + 1
-        let targetTrack = TimelineTrack(name: "Capa \(layerNumber) - \(assetName)", kind: .video)
+        let layerNumber = project.tracks.filter { $0.kind == .video }.count + 1
+        let targetTrack = TimelineTrack(name: "Forma \(layerNumber)", kind: .video)
         project.tracks.insert(targetTrack, at: 0) // Capa superior en la jerarquía
 
         let clip = TimelineClip(
@@ -766,8 +766,8 @@ public final class EditorViewModel: ObservableObject {
 
         // Cada elemento agregado tiene SIEMPRE su propia pista / capa individual dedicada con su nombre propio,
         // garantizando que nunca se junten clips en la misma pista al arrastrar o pulsar el botón (+).
-        let baseName = (asset.fileName as NSString).deletingPathExtension
-        let cleanLayerName = baseName.isEmpty ? asset.fileName : baseName
+        let count = project.tracks.filter { $0.kind == kind }.count + 1
+        let cleanLayerName = (kind == .video) ? "Video \(count)" : "Audio \(count)"
         let newTrack = TimelineTrack(name: cleanLayerName, kind: kind)
         if kind == .video {
             project.tracks.insert(newTrack, at: 0) // Capas de video arriba en la jerarquía
@@ -1398,7 +1398,7 @@ public final class EditorViewModel: ObservableObject {
     // MARK: - Gestión de Pistas
     public func addTrack(kind: TrackKind) {
         let count = project.tracks.filter { $0.kind == kind }.count + 1
-        let prefix = (kind == .video) ? "Capa V" : "Audio A"
+        let prefix = (kind == .video) ? "Video " : "Audio "
         let newTrack = TimelineTrack(name: "\(prefix)\(count)", kind: kind)
         project.tracks.insert(newTrack, at: 0)
         hasUnsavedChanges = true

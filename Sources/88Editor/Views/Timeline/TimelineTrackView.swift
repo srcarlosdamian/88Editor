@@ -19,131 +19,101 @@ public struct TimelineTrackView: View {
         let currentHeight = viewModel.trackHeight
 
         HStack(spacing: 0) {
-            // Cabecera lateral de la capa (160px con icono de arrastre y controles)
-            HStack(spacing: 4) {
-                // Tirador de arrastre para reordenar la capa arriba / abajo con el ratón
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(isDraggingHeader ? .primary : .secondary.opacity(0.55))
-                    .frame(width: 16, height: currentHeight)
-                    .contentShape(Rectangle())
-                    .help("Arrastrar capa hacia arriba o hacia abajo para reordenar")
-                    .gesture(
-                        DragGesture()
-                            .onChanged { val in
-                                isDraggingHeader = true
-                                headerDragDeltaY = val.translation.height
-                                if headerDragDeltaY <= -currentHeight * 0.65 {
-                                    viewModel.moveTrackUp(id: track.id)
-                                    headerDragDeltaY = 0
-                                } else if headerDragDeltaY >= currentHeight * 0.65 {
-                                    viewModel.moveTrackDown(id: track.id)
-                                    headerDragDeltaY = 0
-                                }
-                            }
-                            .onEnded { _ in
-                                isDraggingHeader = false
-                                headerDragDeltaY = 0
-                            }
-                    )
-
-                // Etiqueta con nombre de la capa (Doble clic o clic derecho para renombrar)
+            // Cabecera lateral de la capa (160px con nombre de capa y controles nativos)
+            HStack(spacing: 6) {
+                // Nombre legible de la capa (sin cajas grises ni iconos innecesarios)
                 if isEditingName {
                     TextField("Capa...", text: $tempName)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 11, weight: .semibold))
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)
                         .background(Color(NSColor.textBackgroundColor))
-                        .cornerRadius(4)
-                        .frame(maxWidth: 74)
+                        .cornerRadius(3)
+                        .frame(maxWidth: .infinity)
                         .onSubmit {
                             viewModel.renameTrack(id: track.id, newName: tempName)
                             isEditingName = false
                             NSApp.keyWindow?.makeFirstResponder(nil)
                         }
                 } else {
-                    Text(track.name)
-                        .font(.system(size: 11, weight: .bold))
+                    Text(cleanTrackName(track.name))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.primary)
                         .lineLimit(1)
-                        .truncationMode(.middle)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.12))
-                        .cornerRadius(4)
-                        .frame(maxWidth: 74, alignment: .leading)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                         .onTapGesture(count: 2) {
                             tempName = track.name
                             isEditingName = true
                         }
-                        .help("Doble clic para renombrar esta capa")
+                        .help("Doble clic para renombrar capa")
                 }
 
-                Image(systemName: track.kind.iconName)
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                // Botón Ocultar
-                Button {
-                    viewModel.toggleHideTrack(id: track.id)
-                } label: {
-                    Image(systemName: track.isHidden ? "eye.slash.fill" : "eye.fill")
-                        .font(.system(size: 9))
-                        .foregroundColor(track.isHidden ? .primary.opacity(0.35) : .secondary)
-                }
-                .buttonStyle(.plain)
-                .help(track.isHidden ? "Mostrar capa" : "Ocultar capa")
-
-                // Botón Silenciar
-                Button {
-                    viewModel.toggleMuteTrack(id: track.id)
-                } label: {
-                    Image(systemName: track.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 9))
-                        .foregroundColor(track.isMuted ? .primary.opacity(0.35) : .secondary)
-                }
-                .buttonStyle(.plain)
-                .help(track.isMuted ? "Reactivar sonido" : "Silenciar capa")
-
-                // Botón Bloquear
-                Button {
-                    viewModel.toggleLockTrack(id: track.id)
-                } label: {
-                    Image(systemName: track.isLocked ? "lock.fill" : "lock.open")
-                        .font(.system(size: 9))
-                        .foregroundColor(track.isLocked ? .primary : .secondary.opacity(0.4))
-                }
-                .buttonStyle(.plain)
-                .help(track.isLocked ? "Desbloquear capa" : "Bloquear capa")
-
-                // Botones rápidos para reordenar capa arriba / abajo
-                VStack(spacing: 1) {
+                // Controles de pista alineados a la derecha
+                HStack(spacing: 5) {
+                    // Botón Ocultar
                     Button {
-                        viewModel.moveTrackUp(id: track.id)
+                        viewModel.toggleHideTrack(id: track.id)
                     } label: {
-                        Image(systemName: "chevron.up")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundColor(.secondary)
+                        Image(systemName: track.isHidden ? "eye.slash.fill" : "eye.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(track.isHidden ? .primary.opacity(0.35) : .secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Subir capa (traer adelante)")
+                    .help(track.isHidden ? "Mostrar capa" : "Ocultar capa")
 
+                    // Botón Silenciar
                     Button {
-                        viewModel.moveTrackDown(id: track.id)
+                        viewModel.toggleMuteTrack(id: track.id)
                     } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundColor(.secondary)
+                        Image(systemName: track.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(track.isMuted ? .primary.opacity(0.35) : .secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Bajar capa (enviar atrás)")
+                    .help(track.isMuted ? "Reactivar sonido" : "Silenciar capa")
+
+                    // Botón Bloquear
+                    Button {
+                        viewModel.toggleLockTrack(id: track.id)
+                    } label: {
+                        Image(systemName: track.isLocked ? "lock.fill" : "lock.open")
+                            .font(.system(size: 10))
+                            .foregroundColor(track.isLocked ? .primary : .secondary.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                    .help(track.isLocked ? "Desbloquear capa" : "Bloquear capa")
+
+                    // Tirador de arrastre / reordenar capa
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(isDraggingHeader ? .primary : .secondary.opacity(0.55))
+                        .frame(width: 12, height: currentHeight)
+                        .contentShape(Rectangle())
+                        .help("Arrastrar capa para reordenar arriba o abajo")
+                        .gesture(
+                            DragGesture()
+                                .onChanged { val in
+                                    isDraggingHeader = true
+                                    headerDragDeltaY = val.translation.height
+                                    if headerDragDeltaY <= -currentHeight * 0.65 {
+                                        viewModel.moveTrackUp(id: track.id)
+                                        headerDragDeltaY = 0
+                                    } else if headerDragDeltaY >= currentHeight * 0.65 {
+                                        viewModel.moveTrackDown(id: track.id)
+                                        headerDragDeltaY = 0
+                                    }
+                                }
+                                .onEnded { _ in
+                                    isDraggingHeader = false
+                                    headerDragDeltaY = 0
+                                }
+                        )
                 }
-                .padding(.leading, 1)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 8)
             .frame(width: 160, height: currentHeight)
             .background(
                 isHeaderDropTargeted
@@ -451,5 +421,13 @@ public struct TimelineTrackView: View {
             }
         }
         return false
+    }
+
+    private func cleanTrackName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let dashIdx = trimmed.range(of: " - ") {
+            return String(trimmed[..<dashIdx.lowerBound])
+        }
+        return trimmed
     }
 }
