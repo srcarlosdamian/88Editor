@@ -170,7 +170,7 @@ public struct MediaPoolView: View {
                                         viewModel.addClipToTimeline(assetId: asset.id)
                                     },
                                     onDelete: {
-                                        viewModel.removeAsset(id: asset.id)
+                                        viewModel.promptRemoveAsset(id: asset.id)
                                     },
                                     onReconnect: {
                                         viewModel.reconnectAsset(id: asset.id)
@@ -241,7 +241,7 @@ public struct MediaPoolView: View {
 
                 // Botón rápido de eliminar en la esquina
                 Button {
-                    viewModel.removeAsset(id: asset.id)
+                    viewModel.promptRemoveAsset(id: asset.id)
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 9))
@@ -322,9 +322,15 @@ public struct MediaPoolView: View {
                     NSWorkspace.shared.activateFileViewerSelecting([asset.fileURL])
                 }
             }
+            Button("Reemplazar objeto / archivo...") {
+                viewModel.reconnectAsset(id: asset.id)
+            }
+            Button("Buscar / Localizar en Finder...") {
+                viewModel.reconnectAsset(id: asset.id)
+            }
             Divider()
-            Button("Eliminar de la galería", role: .destructive) {
-                viewModel.removeAsset(id: asset.id)
+            Button("Eliminar de la galería...", role: .destructive) {
+                viewModel.promptRemoveAsset(id: asset.id)
             }
         }
         .onDrag {

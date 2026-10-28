@@ -673,6 +673,16 @@ public final class EditorViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Advertencia al Eliminar Objeto (Reemplazar o Buscar)
+    @Published public var assetPendingDeletion: MediaAsset? = nil
+    @Published public var showDeleteAssetConfirmation: Bool = false
+
+    public func promptRemoveAsset(id: UUID) {
+        guard let asset = project.assets.first(where: { $0.id == id }) else { return }
+        assetPendingDeletion = asset
+        showDeleteAssetConfirmation = true
+    }
+
     public func removeAsset(id: UUID) {
         project.assets.removeAll { $0.id == id }
         // Eliminar también clips asociados de las pistas

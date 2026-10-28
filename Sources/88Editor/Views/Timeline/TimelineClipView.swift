@@ -508,14 +508,12 @@ public struct TimelineClipView: View {
                 Label(clip.isMuted ? "Activar audio" : "Silenciar clip (M)", systemImage: clip.isMuted ? "speaker.wave.2" : "speaker.slash")
             }
 
-            if isMissing {
-                Divider()
-                Button {
-                    onSelect()
-                    onReconnect?()
-                } label: {
-                    Label("Reconectar o reemplazar archivo original...", systemImage: "arrow.triangle.2.circlepath")
-                }
+            Divider()
+            Button {
+                onSelect()
+                onReconnect?()
+            } label: {
+                Label(isMissing ? "Reconectar o buscar archivo original..." : "Reemplazar archivo multimedia...", systemImage: "arrow.triangle.2.circlepath")
             }
 
             Divider()

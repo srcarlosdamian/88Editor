@@ -7,6 +7,7 @@ import AppKit
 public struct MainEditorView: View {
     @StateObject private var viewModel = EditorViewModel()
     @StateObject private var keyboardManager = KeyboardManager()
+    @ObservedObject private var updateManager = AppUpdateManager.shared
     @State private var timelineHeight: CGFloat = 220
     @State private var showLeftSidebar: Bool = true
     @State private var showRightSidebar: Bool = true
@@ -67,6 +68,10 @@ public struct MainEditorView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
             }
+            // Comprobación de actualizaciones en segundo plano (silenciosa y sin bloquear la UI)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                updateManager.checkForUpdates(manual: false)
+            }
             keyboardManager.startMonitoring(
                 viewModel: viewModel,
                 toggleLeftSidebar: {
@@ -122,39 +127,107 @@ public struct MainEditorView: View {
 
     @ViewBuilder
     private var toastOverlay: some View {
-        if let toastMsg = viewModel.notificationToastMessage {
-            HStack(spacing: 8) {
-                Image(systemName: viewModel.notificationToastIcon)
-                    .foregroundColor(.primary)
-                    .font(.system(size: 13, weight: .semibold))
+        VStack(spacing: 8) {
+            // Notificación discreta de actualización disponible (No bloquea la edición)
+            if updateManager.isBannerVisible && updateManager.isUpdateAvailable {
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundColor(.accentColor)
+                        .font(.system(size: 15, weight: .bold))
 
-                Text(toastMsg)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.primary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 5) {
+                            Text("Nueva actualización disponible:")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(updateManager.latestVersion)
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundColor(.accentColor)
+                        }
+                        Text("Puedes actualizar ahora o continuar editando y hacerlo después desde el botón junto a 'Nuevo'.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
 
-                Button {
-                    viewModel.notificationToastMessage = nil
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.secondary)
+                    Spacer()
+
+                    Button("Actualizar ahora") {
+                        withAnimation {
+                            updateManager.isBannerVisible = false
+                        }
+                        updateManager.isUpdateSheetPresented = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button("Más tarde") {
+                        withAnimation {
+                            updateManager.isBannerVisible = false
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        withAnimation {
+                            updateManager.isBannerVisible = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 2)
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, 4)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.35), radius: 8, x: 0, y: 4)
+                .padding(.horizontal, 16)
+                .padding(.top, 42)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.35), radius: 8, x: 0, y: 4)
-            .padding(.top, 42)
-            .transition(.move(edge: .top).combined(with: .opacity))
-            .zIndex(999)
+
+            if let toastMsg = viewModel.notificationToastMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: viewModel.notificationToastIcon)
+                        .foregroundColor(.primary)
+                        .font(.system(size: 13, weight: .semibold))
+
+                    Text(toastMsg)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+
+                    Button {
+                        viewModel.notificationToastMessage = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 4)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.35), radius: 8, x: 0, y: 4)
+                .padding(.top, (updateManager.isBannerVisible && updateManager.isUpdateAvailable) ? 0 : 42)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: updateManager.isBannerVisible)
+        .zIndex(999)
     }
 }
 
@@ -241,9 +314,13 @@ private struct EditorPlaybackNotificationHandler: ViewModifier {
 
 private struct EditorSheetsHandler: ViewModifier {
     @ObservedObject var viewModel: EditorViewModel
+    @ObservedObject private var updateManager = AppUpdateManager.shared
 
     func body(content: Content) -> some View {
         content
+            .sheet(isPresented: $updateManager.isUpdateSheetPresented) {
+                AppUpdateSheet()
+            }
             .sheet(isPresented: $viewModel.isNewProjectSheetPresented) {
                 NewProjectSheet(viewModel: viewModel)
             }
@@ -288,6 +365,35 @@ private struct EditorSheetsHandler: ViewModifier {
                 Button("Entendido", role: .cancel) {}
             } message: {
                 Text(viewModel.unsupportedFormatAlertMessage ?? "El formato del archivo no es compatible con AVFoundation en macOS.")
+            }
+            .confirmationDialog(
+                "Gestión de Objeto",
+                isPresented: $viewModel.showDeleteAssetConfirmation,
+                titleVisibility: .visible,
+                presenting: viewModel.assetPendingDeletion
+            ) { asset in
+                Button("Reemplazar por otro archivo...") {
+                    viewModel.reconnectAsset(id: asset.id)
+                }
+
+                Button("Buscar / Localizar en Finder...") {
+                    viewModel.reconnectAsset(id: asset.id)
+                }
+
+                Button("Eliminar del proyecto", role: .destructive) {
+                    viewModel.removeAsset(id: asset.id)
+                }
+
+                Button("Cancelar", role: .cancel) {
+                    viewModel.assetPendingDeletion = nil
+                }
+            } message: { asset in
+                let count = viewModel.project.tracks.flatMap { $0.clips }.filter { $0.assetId == asset.id }.count
+                if count > 0 {
+                    Text("El objeto '\(asset.fileName)' está en uso en \(count) clip(s) de la línea de tiempo. Si lo eliminas, los clips asociados también se eliminarán.\n\n¿Deseas reemplazarlo por otro archivo, buscar su ubicación en el disco o eliminarlo?")
+                } else {
+                    Text("¿Deseas eliminar '\(asset.fileName)' de la galería de medios o prefieres reemplazarlo por otro archivo?")
+                }
             }
     }
 }

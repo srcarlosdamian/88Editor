@@ -5,6 +5,12 @@ public struct EditorMenuCommands: Commands {
     public init() {}
 
     public var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Buscar Actualizaciones...") {
+                AppUpdateManager.shared.checkForUpdates(manual: true)
+            }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("Nuevo Proyecto...") {
                 NotificationCenter.default.post(name: .promptNewProject, object: nil)

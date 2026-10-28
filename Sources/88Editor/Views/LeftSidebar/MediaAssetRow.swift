@@ -93,12 +93,13 @@ public struct MediaAssetRow: View {
                 .stroke(isSelected ? Color.white.opacity(0.25) : Color.clear, lineWidth: 1)
         )
         .contextMenu {
-            if asset.isMissing {
-                Button("Reconectar o reemplazar archivo...") {
-                    onReconnect?()
-                }
-                Divider()
+            Button("Reemplazar objeto / archivo...") {
+                onReconnect?()
             }
+            Button("Buscar / Localizar en Finder...") {
+                onReconnect?()
+            }
+            Divider()
             Button("Añadir a la línea de tiempo", action: onAddToTimeline)
             if !asset.isMissing {
                 Button("Mostrar en Finder") {
@@ -106,7 +107,7 @@ public struct MediaAssetRow: View {
                 }
             }
             Divider()
-            Button("Eliminar de la galería", role: .destructive, action: onDelete)
+            Button("Eliminar de la galería...", role: .destructive, action: onDelete)
         }
         .onDrag {
             NSItemProvider(object: asset.id.uuidString as NSString)

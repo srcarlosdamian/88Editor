@@ -5,6 +5,7 @@ import AppKit
 /// Soporta doble clic en el área vacía para ajustar/maximizar la ventana al tamaño completo de la pantalla.
 public struct EditorToolbar: View {
     @ObservedObject var viewModel: EditorViewModel
+    @ObservedObject private var updateManager = AppUpdateManager.shared
     @Binding var showLeftSidebar: Bool
     @Binding var showRightSidebar: Bool
 
@@ -59,6 +60,31 @@ public struct EditorToolbar: View {
 
             // Acciones de proyecto
             HStack(spacing: 8) {
+                // Botón neutro y lineal para actualizar sin bloquear el flujo de trabajo
+                if updateManager.isUpdateAvailable {
+                    Button {
+                        updateManager.isUpdateSheetPresented = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.system(size: 11, weight: .medium))
+                            Text("Actualizar (\(updateManager.latestVersion))")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3.5)
+                        .background(Color.clear)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(Color.primary.opacity(0.35), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Nueva versión disponible (\(updateManager.latestVersion)). Haz clic aquí para actualizar cuando estés lista.")
+                    .transition(.opacity.combined(with: .scale))
+                }
+
                 // Nuevo Proyecto
                 Button {
                     viewModel.isNewProjectSheetPresented = true
