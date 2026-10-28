@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// Vista central del Canvas para previsualización en tiempo real.
 /// Soporta zoom interactivo mediante gestos de trackpad (pellizcar / pinch-to-zoom),
@@ -296,12 +297,34 @@ public struct CanvasView: View {
             let approxH = max(60, fSize * 1.5)
             return (min(fittedWidth, approxW), approxH)
         }
-        if let asset = viewModel.asset(for: clip), asset.width > 0 && asset.height > 0 {
-            let assetAspect = Double(asset.width) / Double(asset.height)
-            // SIEMPRE ajusta en altura los elementos que se agregan (100% de la altura del visor):
-            let h = fittedHeight
-            let w = fittedHeight * CGFloat(assetAspect)
-            return (w, h)
+        if let asset = viewModel.asset(for: clip) {
+            var w = asset.width
+            var h = asset.height
+            if w <= 0 || h <= 0 {
+                // Fallback directo al archivo si aún no se inicializó
+                if asset.mediaType == .image, let img = NSImage(contentsOf: asset.fileURL) {
+                    w = Double(img.size.width)
+                    h = Double(img.size.height)
+                } else if asset.mediaType == .video {
+                    let avAsset = AVURLAsset(url: asset.fileURL)
+                    if let track = avAsset.tracks(withMediaType: .video).first {
+                        let size = track.naturalSize.applying(track.preferredTransform)
+                        let realW = abs(size.width)
+                        let realH = abs(size.height)
+                        if realW > 0 && realH > 0 {
+                            w = Double(realW)
+                            h = Double(realH)
+                        }
+                    }
+                }
+            }
+            if w > 0 && h > 0 {
+                let assetAspect = w / h
+                // SIEMPRE ajusta en altura los elementos que se agregan (100% de la altura del visor):
+                let elementH = fittedHeight
+                let elementW = fittedHeight * CGFloat(assetAspect)
+                return (elementW, elementH)
+            }
         }
         return (fittedWidth, fittedHeight)
     }
@@ -348,11 +371,12 @@ public struct CanvasView: View {
                 renderVectorShape(shape: shape, fillHex: clip.fillColorHex ?? "#FF3B30", strokeHex: clip.strokeColorHex, strokeWidth: clip.strokeWidth ?? 0)
                     .frame(width: elemW, height: elemH)
             }
-            // B) Video Nativo
+            // B) Video Nativo con aspecto original perfecto y ajuste en altura
             else if let asset = layer.asset, asset.mediaType == .video {
-                NativeVideoPlayerView(
-                    player: viewModel.playbackEngine.player,
-                    previewScale: viewModel.playbackEngine.previewScale.scaleFactor
+                ClipVideoPlayerView(
+                    clip: clip,
+                    asset: asset,
+                    viewModel: viewModel
                 )
                 .frame(width: elemW, height: elemH)
             }

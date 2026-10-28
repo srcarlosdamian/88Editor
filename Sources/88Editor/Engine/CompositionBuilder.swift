@@ -23,6 +23,12 @@ public final class CompositionBuilder {
         let composition = AVMutableComposition()
         var audioMixParameters: [AVMutableAudioMixInputParameters] = []
 
+        struct VideoClipPlacement {
+            let clip: TimelineClip
+            let sourceTrack: AVAssetTrack
+        }
+        var videoTrackPlacements: [(compTrack: AVMutableCompositionTrack, clips: [VideoClipPlacement])] = []
+
         // Filtramos pistas visibles
         for track in tracks {
             guard !track.isHidden else { continue }
@@ -50,6 +56,7 @@ public final class CompositionBuilder {
 
                 // Ordenamos clips secuencialmente por tiempo de inicio
                 let sortedClips = track.clips.sorted { $0.startTime < $1.startTime }
+                var trackVideoClips: [VideoClipPlacement] = []
 
                 for clip in sortedClips {
                     guard let assetMeta = assets[clip.assetId] else { continue }
@@ -64,6 +71,7 @@ public final class CompositionBuilder {
                     if let sourceVideoTrack = try? await avAsset.loadTracks(withMediaType: .video).first {
                         do {
                             try compVideoTrack.insertTimeRange(sourceTimeRange, of: sourceVideoTrack, at: clipStartTime)
+                            trackVideoClips.append(VideoClipPlacement(clip: clip, sourceTrack: sourceVideoTrack))
                         } catch {
                             print("[88 Editor] Error insertando pista de video: \(error.localizedDescription)")
                         }
@@ -87,6 +95,10 @@ public final class CompositionBuilder {
                             print("[88 Editor] Error insertando audio de video: \(error.localizedDescription)")
                         }
                     }
+                }
+
+                if !trackVideoClips.isEmpty {
+                    videoTrackPlacements.append((compTrack: compVideoTrack, clips: trackVideoClips))
                 }
 
                 if let params = videoAudioParams {
@@ -147,8 +159,68 @@ public final class CompositionBuilder {
 
         // Construir VideoComposition si hay pistas de video presentes
         var videoComposition: AVVideoComposition?
-        let videoTracks = composition.tracks(withMediaType: .video)
-        if !videoTracks.isEmpty {
+        if !videoTrackPlacements.isEmpty, let config = configuration {
+            let targetW = CGFloat(config.width)
+            let targetH = CGFloat(config.height)
+            let totalDur = composition.duration
+
+            if totalDur.seconds > 0 {
+                let instruction = AVMutableVideoCompositionInstruction()
+                instruction.timeRange = CMTimeRange(start: .zero, duration: totalDur)
+
+                var layerInstructions: [AVMutableVideoCompositionLayerInstruction] = []
+
+                for placement in videoTrackPlacements {
+                    let layerInst = AVMutableVideoCompositionLayerInstruction(assetTrack: placement.compTrack)
+
+                    for item in placement.clips {
+                        let clip = item.clip
+                        let sourceTrack = item.sourceTrack
+                        let clipStart = CMTime(seconds: clip.startTime, preferredTimescale: 600)
+                        let clipEnd = CMTime(seconds: clip.endTime, preferredTimescale: 600)
+
+                        // 1. Obtener orientación y dimensiones reales del video fuente
+                        let naturalSize = (try? await sourceTrack.load(.naturalSize)) ?? .zero
+                        let prefTransform = (try? await sourceTrack.load(.preferredTransform)) ?? .identity
+                        let orientedSize = naturalSize.applying(prefTransform)
+                        let orientedW = abs(orientedSize.width)
+                        let orientedH = abs(orientedSize.height)
+
+                        guard orientedW > 0, orientedH > 0 else { continue }
+
+                        // 2. Ajuste al 100% en altura del visor ("siempre ajusta en altura")
+                        let baseScale = targetH / orientedH
+                        let userScale = CGFloat(clip.scale)
+                        let finalScale = baseScale * userScale
+
+                        let scaledW = orientedW * finalScale
+                        let scaledH = orientedH * finalScale
+
+                        // 3. Posicionamiento centrado + offsets de usuario
+                        let posX = (targetW - scaledW) / 2.0 + CGFloat(clip.positionX)
+                        let posY = (targetH - scaledH) / 2.0 - CGFloat(clip.positionY)
+
+                        var t = prefTransform
+                        t = t.concatenating(CGAffineTransform(scaleX: finalScale, y: finalScale))
+                        t = t.concatenating(CGAffineTransform(translationX: posX, y: posY))
+
+                        layerInst.setTransform(t, at: clipStart)
+                        layerInst.setOpacity(Float(clip.opacity), at: clipStart)
+                        layerInst.setOpacity(0.0, at: clipEnd)
+                    }
+
+                    layerInstructions.append(layerInst)
+                }
+
+                instruction.layerInstructions = layerInstructions
+
+                let mutableVideoComp = AVMutableVideoComposition()
+                mutableVideoComp.renderSize = CGSize(width: targetW, height: targetH)
+                mutableVideoComp.frameDuration = CMTime(value: 1, timescale: CMTimeScale(config.framerate.rawValue))
+                mutableVideoComp.instructions = [instruction]
+                videoComposition = mutableVideoComp
+            }
+        } else if !composition.tracks(withMediaType: .video).isEmpty {
             let mutableVideoComp = AVMutableVideoComposition(propertiesOf: composition)
             if let config = configuration {
                 mutableVideoComp.renderSize = CGSize(width: config.width, height: config.height)

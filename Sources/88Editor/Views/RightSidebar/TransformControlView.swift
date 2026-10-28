@@ -77,6 +77,7 @@ public struct TransformControlRow: View {
 
             Slider(value: $value, in: range, step: step)
                 .controlSize(.mini)
+                .tint(.secondary)
         }
     }
 }

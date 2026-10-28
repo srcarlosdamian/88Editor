@@ -115,13 +115,70 @@ public final class EditorViewModel: ObservableObject {
         self.availableSystemFonts = families.sorted()
     }
 
+    // MARK: - Reproductores de Clips de Video en Canvas
+    private var clipPlayers: [UUID: AVPlayer] = [:]
+
+    public func player(for clip: TimelineClip, asset: MediaAsset) -> AVPlayer {
+        if let existing = clipPlayers[clip.id] {
+            syncClipPlayer(existing, clip: clip)
+            return existing
+        }
+        let p = AVPlayer(url: asset.fileURL)
+        p.isMuted = true
+        p.actionAtItemEnd = .none
+        clipPlayers[clip.id] = p
+        syncClipPlayer(p, clip: clip)
+        return p
+    }
+
+    public func syncClipPlayer(_ player: AVPlayer, clip: TimelineClip) {
+        let cur = playbackEngine.currentTime
+        let localTime = max(0, cur - clip.startTime) + clip.sourceIn
+        let isInside = cur >= clip.startTime && cur <= clip.endTime
+
+        if playbackEngine.isPlaying && isInside {
+            if player.rate == 0 {
+                let cmTime = CMTime(seconds: localTime, preferredTimescale: 600)
+                player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+                player.play()
+            }
+        } else {
+            if player.rate != 0 {
+                player.pause()
+            }
+            let currentSec = CMTimeGetSeconds(player.currentTime())
+            if !currentSec.isFinite || abs(currentSec - localTime) > 0.05 {
+                let cmTime = CMTime(seconds: localTime, preferredTimescale: 600)
+                player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+            }
+        }
+    }
+
+    public func syncAllActiveClipPlayers() {
+        for track in project.tracks where track.kind == .video && !track.isHidden {
+            for clip in track.clips {
+                if let p = clipPlayers[clip.id] {
+                    syncClipPlayer(p, clip: clip)
+                }
+            }
+        }
+    }
+
     // MARK: - Observadores de Reproducción
     private func setupEngineObservers() {
         playbackEngine.$currentTime
             .dropFirst()
             .sink { [weak self] _ in
-                // Mantenemos sincronía con el playhead
+                // Mantenemos sincronía con el playhead y reproductores de clips
+                self?.syncAllActiveClipPlayers()
                 self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        playbackEngine.$isPlaying
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.syncAllActiveClipPlayers()
             }
             .store(in: &cancellables)
     }
@@ -310,13 +367,37 @@ public final class EditorViewModel: ObservableObject {
             }
 
             // Metadatos iniciales
-            let initialDuration: Double = (resolvedMediaType == .image) ? 5.0 : 0.0
-            let initialWidth: Double = 0.0
-            let initialHeight: Double = 0.0
+            var initialDuration: Double = (resolvedMediaType == .image) ? 5.0 : 0.0
+            var initialWidth: Double = 0.0
+            var initialHeight: Double = 0.0
             var fileSize: Int64 = 0
 
             if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) {
                 fileSize = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+            }
+
+            if resolvedMediaType == .image {
+                if let image = NSImage(contentsOf: url) {
+                    initialWidth = Double(image.size.width)
+                    initialHeight = Double(image.size.height)
+                }
+            } else if resolvedMediaType == .video {
+                let avAsset = AVURLAsset(url: url)
+                if let track = avAsset.tracks(withMediaType: .video).first {
+                    let naturalSize = track.naturalSize
+                    let transform = track.preferredTransform
+                    let transformedSize = naturalSize.applying(transform)
+                    let realW = abs(transformedSize.width)
+                    let realH = abs(transformedSize.height)
+                    if realW > 0 && realH > 0 {
+                        initialWidth = Double(realW)
+                        initialHeight = Double(realH)
+                    }
+                }
+                let dur = CMTimeGetSeconds(avAsset.duration)
+                if dur.isFinite && dur > 0 {
+                    initialDuration = dur
+                }
             }
 
             let asset = MediaAsset(
@@ -367,9 +448,16 @@ public final class EditorViewModel: ObservableObject {
 
             if mediaType == .video {
                 if let videoTrack = try? await avAsset.loadTracks(withMediaType: .video).first {
-                    let naturalSize = try await videoTrack.load(.naturalSize)
-                    assetWidth = Double(naturalSize.width)
-                    assetHeight = Double(naturalSize.height)
+                    let naturalSize = (try? await videoTrack.load(.naturalSize)) ?? .zero
+                    let preferredTransform = (try? await videoTrack.load(.preferredTransform)) ?? .identity
+                    
+                    // Rotación real del video (vertical smartphone vs horizontal)
+                    let transformedSize = naturalSize.applying(preferredTransform)
+                    let realW = abs(transformedSize.width)
+                    let realH = abs(transformedSize.height)
+                    
+                    assetWidth = (realW > 0) ? Double(realW) : Double(naturalSize.width)
+                    assetHeight = (realH > 0) ? Double(realH) : Double(naturalSize.height)
                 }
             }
 
@@ -379,6 +467,8 @@ public final class EditorViewModel: ObservableObject {
                     self.project.assets[idx].width = assetWidth
                     self.project.assets[idx].height = assetHeight
                 }
+                self.objectWillChange.send()
+                self.debouncedRebuildComposition()
             }
         } catch {
             print("[88 Editor] Error cargando metadatos para \(url.lastPathComponent): \(error)")

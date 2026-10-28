@@ -394,54 +394,56 @@ public struct InspectorView: View {
             }
         }
 
-        Divider().foregroundColor(DesignSystem.border)
+        // 7. TEXTO Y TIPOGRAFÍA (Sólo se muestra si se tiene seleccionado un objeto de texto)
+        if clip.textOverlay != nil || viewModel.asset(for: clip)?.mediaType == .text {
+            Divider().foregroundColor(DesignSystem.border)
 
-        // 7. TEXTO Y TIPOGRAFÍA
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Texto y Tipografía", systemImage: "character")
-                .font(.system(size: 11, weight: .bold))
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Texto y Tipografía", systemImage: "character")
+                    .font(.system(size: 11, weight: .bold))
 
-            TextField("Texto superpuesto opcional...", text: Binding(
-                get: { viewModel.selectedClip?.textOverlay ?? "" },
-                set: { val in
-                    viewModel.updateSelectedClip { $0.textOverlay = val }
-                }
-            ))
-            .textFieldStyle(.roundedBorder)
-
-            ColorPicker("Color de Texto", selection: Binding(
-                get: { Color(hex: clip.textColorHex ?? "#FFFFFF") },
-                set: { newCol in
-                    viewModel.updateSelectedClip { $0.textColorHex = newCol.toHex() }
-                }
-            ))
-
-            TransformControlRow(
-                title: "Tamaño Fuente",
-                value: Binding(
-                    get: { viewModel.selectedClip?.fontSize ?? 48.0 },
+                TextField("Texto superpuesto opcional...", text: Binding(
+                    get: { viewModel.selectedClip?.textOverlay ?? "" },
                     set: { val in
-                        viewModel.updateSelectedClip { $0.fontSize = val }
+                        viewModel.updateSelectedClip { $0.textOverlay = val }
                     }
-                ),
-                range: 12...180,
-                step: 1.0,
-                unit: " pt",
-                defaultValue: 48.0
-            )
+                ))
+                .textFieldStyle(.roundedBorder)
 
-            HStack {
-                Text(clip.fontName ?? "Fuente del sistema")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                ColorPicker("Color de Texto", selection: Binding(
+                    get: { Color(hex: clip.textColorHex ?? "#FFFFFF") },
+                    set: { newCol in
+                        viewModel.updateSelectedClip { $0.textColorHex = newCol.toHex() }
+                    }
+                ))
 
-                Spacer()
+                TransformControlRow(
+                    title: "Tamaño Fuente",
+                    value: Binding(
+                        get: { viewModel.selectedClip?.fontSize ?? 48.0 },
+                        set: { val in
+                            viewModel.updateSelectedClip { $0.fontSize = val }
+                        }
+                    ),
+                    range: 12...180,
+                    step: 1.0,
+                    unit: " pt",
+                    defaultValue: 48.0
+                )
 
-                Button("Elegir Fuente...") {
-                    viewModel.isFontPickerPresented = true
+                HStack {
+                    Text(clip.fontName ?? "Fuente del sistema")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Button("Elegir Fuente...") {
+                        viewModel.isFontPickerPresented = true
+                    }
+                    .controlSize(.small)
                 }
-                .controlSize(.small)
             }
         }
     }
