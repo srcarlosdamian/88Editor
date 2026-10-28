@@ -70,7 +70,7 @@ public struct ExportSettingsSheet: View {
                         // Tarjeta explicativa de compatibilidad del preset
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "info.circle")
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(.primary)
                                 .font(.system(size: 12))
                                 .padding(.top, 1)
 
@@ -179,7 +179,7 @@ public struct ExportSettingsSheet: View {
                     HStack(spacing: 12) {
                         Image(systemName: "scalemass.fill")
                             .font(.system(size: 20))
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(.primary)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Peso Estimado de Archivo:")
@@ -195,8 +195,8 @@ public struct ExportSettingsSheet: View {
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                            .background(Color.accentColor.opacity(0.15))
-                            .foregroundColor(.accentColor)
+                            .background(Color.white.opacity(0.12))
+                            .foregroundColor(.primary)
                             .cornerRadius(6)
                     }
                     .padding(12)

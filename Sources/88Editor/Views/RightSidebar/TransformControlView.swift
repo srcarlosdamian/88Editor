@@ -44,7 +44,7 @@ public struct TransformControlRow: View {
                     Button(action: toggleAction) {
                         Image(systemName: isKeyframeActive ? "diamond.fill" : "diamond")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(isKeyframeActive ? DesignSystem.selectedClipBorder : (hasAnyKeyframes ? .accentColor : .secondary.opacity(0.5)))
+                            .foregroundColor(isKeyframeActive ? DesignSystem.selectedClipBorder : (hasAnyKeyframes ? .primary : .secondary.opacity(0.5)))
                     }
                     .buttonStyle(.plain)
                     .help(isKeyframeActive ? "Eliminar fotograma clave en el cabezal" : "Agregar fotograma clave en el cabezal")

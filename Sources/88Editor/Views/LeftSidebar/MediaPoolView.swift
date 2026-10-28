@@ -123,7 +123,7 @@ public struct MediaPoolView: View {
                     VStack(spacing: 14) {
                         Image(systemName: isDropTargeted ? "arrow.down.doc.fill" : "arrow.down.doc")
                             .font(.system(size: 32))
-                            .foregroundColor(isDropTargeted ? .accentColor : .secondary)
+                            .foregroundColor(isDropTargeted ? .primary : .secondary)
 
                         VStack(spacing: 4) {
                             Text("Arrastra archivos aquí")
@@ -145,7 +145,7 @@ public struct MediaPoolView: View {
                     .background(
                         RoundedRectangle(cornerRadius: 8)
                             .strokeBorder(
-                                isDropTargeted ? Color.accentColor : Color.secondary.opacity(0.3),
+                                isDropTargeted ? Color.white.opacity(0.4) : Color.secondary.opacity(0.3),
                                 style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
                             )
                     )
@@ -299,7 +299,7 @@ public struct MediaPoolView: View {
         .minimalCard(cornerRadius: 6)
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                .stroke(isSelected ? Color.white.opacity(0.85) : Color.clear, lineWidth: 1.5)
         )
         .contentShape(Rectangle())
         .onTapGesture {

@@ -141,8 +141,8 @@ public struct TimelineView: View {
                             .font(.system(size: 9, weight: .semibold, design: .monospaced))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
-                            .background(Color.accentColor.opacity(0.18))
-                            .foregroundColor(.accentColor)
+                            .background(Color.white.opacity(0.15))
+                            .foregroundColor(.primary)
                             .cornerRadius(4)
                     }
                 }
@@ -283,7 +283,7 @@ public struct TimelineView: View {
                     VStack(spacing: 12) {
                         Image(systemName: isTimelineDropTargeted ? "arrow.down.circle.fill" : "film.stack")
                             .font(.system(size: 32))
-                            .foregroundColor(isTimelineDropTargeted ? .accentColor : .secondary)
+                            .foregroundColor(isTimelineDropTargeted ? .primary : .secondary)
 
                         VStack(spacing: 3) {
                             Text("Línea de tiempo vacía")

@@ -528,7 +528,7 @@ public struct CanvasView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 3)
                 .stroke(DesignSystem.selectedClipBorder, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
-                .background(Color.accentColor.opacity(0.001))
+                .background(Color.clear)
                 .frame(width: baseW, height: baseH)
                 .gesture(
                     DragGesture(coordinateSpace: .named("CanvasWorkspace"))

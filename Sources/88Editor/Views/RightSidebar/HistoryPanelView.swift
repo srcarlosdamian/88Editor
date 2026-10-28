@@ -144,11 +144,11 @@ public struct HistoryPanelView: View {
                                     .padding(.vertical, 6)
                                     .background(
                                         RoundedRectangle(cornerRadius: 5)
-                                            .fill(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
+                                            .fill(isCurrent ? Color.white.opacity(0.12) : Color.clear)
                                     )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 5)
-                                            .stroke(isCurrent ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1)
+                                            .stroke(isCurrent ? Color.white.opacity(0.25) : Color.clear, lineWidth: 1)
                                     )
                                     .contentShape(Rectangle())
                                 }

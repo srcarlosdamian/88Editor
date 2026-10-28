@@ -57,13 +57,13 @@ public struct TimelineRulerView: View {
                 // Resaltado de la franja del Área de Trabajo / Rango de Renderizado
                 if hasCustomArea && outX > inX {
                     Rectangle()
-                        .fill(Color.accentColor.opacity(0.18))
+                        .fill(Color.white.opacity(0.12))
                         .frame(width: max(2, outX - inX), height: 26)
                         .position(x: inX + (outX - inX) / 2, y: 13)
 
                     // Barra superior indicadora de rango de renderizado
                     Rectangle()
-                        .fill(Color.accentColor)
+                        .fill(Color.white.opacity(0.75))
                         .frame(width: max(2, outX - inX), height: 3)
                         .position(x: inX + (outX - inX) / 2, y: 1.5)
                 }
@@ -94,7 +94,7 @@ public struct TimelineRulerView: View {
                 // Tirador / Corchete Izquierdo (Punto In)
                 if hasCustomArea {
                     WorkAreaBracketShape(isLeft: true)
-                        .fill(Color.accentColor)
+                        .fill(Color.white.opacity(0.85))
                         .frame(width: 8, height: 16)
                         .position(x: inX + 4, y: 13)
                         .shadow(color: Color.black.opacity(0.4), radius: 1, x: 0, y: 1)
@@ -108,7 +108,7 @@ public struct TimelineRulerView: View {
 
                     // Tirador / Corchete Derecho (Punto Out)
                     WorkAreaBracketShape(isLeft: false)
-                        .fill(Color.accentColor)
+                        .fill(Color.white.opacity(0.85))
                         .frame(width: 8, height: 16)
                         .position(x: outX - 4, y: 13)
                         .shadow(color: Color.black.opacity(0.4), radius: 1, x: 0, y: 1)

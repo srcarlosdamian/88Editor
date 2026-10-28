@@ -324,7 +324,7 @@ public struct NewProjectSheet: View {
             .minimalCard(cornerRadius: 6)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                    .stroke(isSelected ? Color.white.opacity(0.85) : Color.clear, lineWidth: 1.5)
             )
         }
         .buttonStyle(.plain)

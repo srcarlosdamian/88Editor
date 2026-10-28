@@ -86,11 +86,11 @@ public struct MediaAssetRow: View {
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+                .fill(isSelected ? Color.white.opacity(0.12) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1)
+                .stroke(isSelected ? Color.white.opacity(0.25) : Color.clear, lineWidth: 1)
         )
         .contextMenu {
             if asset.isMissing {

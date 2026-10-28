@@ -167,7 +167,7 @@ public struct TimelineTrackView: View {
             ZStack(alignment: .leading) {
                 // Fondo del carril
                 Rectangle()
-                    .fill(isDropTargeted ? Color.accentColor.opacity(0.15) : Color(NSColor.underPageBackgroundColor).opacity(0.5))
+                    .fill(isDropTargeted ? Color.white.opacity(0.12) : Color(NSColor.underPageBackgroundColor).opacity(0.5))
                     .frame(width: timelineWidth, height: currentHeight)
                     .contentShape(Rectangle())
                     .onTapGesture {

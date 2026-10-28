@@ -13,7 +13,7 @@ public enum DesignSystem {
     public static let subtleBorder = Color.white.opacity(0.06)
 
     // Acentos sobrios de video
-    public static let accent = Color.accentColor
+    public static let accent = Color.white.opacity(0.85)
     public static let playhead = Color(red: 1.0, green: 0.28, blue: 0.25)
     public static let videoClip = Color(red: 0.20, green: 0.44, blue: 0.70)
     public static let audioClip = Color(red: 0.18, green: 0.58, blue: 0.44)

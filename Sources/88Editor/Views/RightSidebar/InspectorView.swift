@@ -22,8 +22,8 @@ public struct InspectorView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 5)
-                    .background(viewModel.activeRightTab == .inspector ? Color.accentColor.opacity(0.18) : Color.clear)
-                    .foregroundColor(viewModel.activeRightTab == .inspector ? .accentColor : .secondary)
+                    .background(viewModel.activeRightTab == .inspector ? Color.white.opacity(0.12) : Color.clear)
+                    .foregroundColor(viewModel.activeRightTab == .inspector ? .primary : .secondary)
                     .cornerRadius(5)
                 }
                 .buttonStyle(.plain)
@@ -41,14 +41,14 @@ public struct InspectorView: View {
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(viewModel.activeRightTab == .history ? Color.accentColor : Color.secondary.opacity(0.25))
-                            .foregroundColor(viewModel.activeRightTab == .history ? .white : .primary)
+                            .background(viewModel.activeRightTab == .history ? Color.white.opacity(0.22) : Color.white.opacity(0.08))
+                            .foregroundColor(.primary)
                             .clipShape(Capsule())
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 5)
-                    .background(viewModel.activeRightTab == .history ? Color.accentColor.opacity(0.18) : Color.clear)
-                    .foregroundColor(viewModel.activeRightTab == .history ? .accentColor : .secondary)
+                    .background(viewModel.activeRightTab == .history ? Color.white.opacity(0.12) : Color.clear)
+                    .foregroundColor(viewModel.activeRightTab == .history ? .primary : .secondary)
                     .cornerRadius(5)
                 }
                 .buttonStyle(.plain)
@@ -174,7 +174,7 @@ public struct InspectorView: View {
 
             HStack(spacing: 8) {
                 Image(systemName: isAudioOnly ? "waveform" : (clip.shapeType != nil ? "circle.fill" : (clip.textOverlay != nil ? "character.textbox" : "film")))
-                    .foregroundColor(isAudioOnly ? .teal : .secondary)
+                    .foregroundColor(.secondary)
                     .font(.system(size: 13))
 
                 VStack(alignment: .leading, spacing: 1) {
