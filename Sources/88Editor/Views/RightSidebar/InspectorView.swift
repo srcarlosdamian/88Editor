@@ -303,35 +303,57 @@ public struct InspectorView: View {
                 TransformControlRow(
                     title: "Posición X",
                     value: Binding(
-                        get: { viewModel.selectedClip?.positionX ?? 0.0 },
+                        get: { viewModel.selectedClip?.positionX(atRelativeTime: viewModel.currentClipRelativeTime) ?? 0.0 },
                         set: { val in
-                            viewModel.updateSelectedClip { $0.positionX = val }
+                            viewModel.updateAnimatableProperty(.positionX, value: val)
                         }
                     ),
                     range: -800...800,
                     step: 1.0,
                     unit: " px",
-                    defaultValue: 0.0
+                    defaultValue: 0.0,
+                    isKeyframeActive: viewModel.isKeyframeActive(for: .positionX),
+                    hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .positionX),
+                    onToggleKeyframe: {
+                        viewModel.toggleKeyframe(for: .positionX)
+                    },
+                    onPreviousKeyframe: {
+                        viewModel.jumpToPreviousKeyframe(for: .positionX)
+                    },
+                    onNextKeyframe: {
+                        viewModel.jumpToNextKeyframe(for: .positionX)
+                    }
                 )
 
                 TransformControlRow(
                     title: "Posición Y",
                     value: Binding(
-                        get: { viewModel.selectedClip?.positionY ?? 0.0 },
+                        get: { viewModel.selectedClip?.positionY(atRelativeTime: viewModel.currentClipRelativeTime) ?? 0.0 },
                         set: { val in
-                            viewModel.updateSelectedClip { $0.positionY = val }
+                            viewModel.updateAnimatableProperty(.positionY, value: val)
                         }
                     ),
                     range: -800...800,
                     step: 1.0,
                     unit: " px",
-                    defaultValue: 0.0
+                    defaultValue: 0.0,
+                    isKeyframeActive: viewModel.isKeyframeActive(for: .positionY),
+                    hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .positionY),
+                    onToggleKeyframe: {
+                        viewModel.toggleKeyframe(for: .positionY)
+                    },
+                    onPreviousKeyframe: {
+                        viewModel.jumpToPreviousKeyframe(for: .positionY)
+                    },
+                    onNextKeyframe: {
+                        viewModel.jumpToNextKeyframe(for: .positionY)
+                    }
                 )
 
                 TransformControlRow(
                     title: "Escala",
                     value: Binding(
-                        get: { (viewModel.selectedClip?.scale(at: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
+                        get: { (viewModel.selectedClip?.scale(atRelativeTime: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
                         set: { val in
                             viewModel.updateAnimatableProperty(.scale, value: val / 100.0)
                         }
@@ -344,13 +366,19 @@ public struct InspectorView: View {
                     hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .scale),
                     onToggleKeyframe: {
                         viewModel.toggleKeyframe(for: .scale)
+                    },
+                    onPreviousKeyframe: {
+                        viewModel.jumpToPreviousKeyframe(for: .scale)
+                    },
+                    onNextKeyframe: {
+                        viewModel.jumpToNextKeyframe(for: .scale)
                     }
                 )
 
                 TransformControlRow(
                     title: "Rotación",
                     value: Binding(
-                        get: { viewModel.selectedClip?.rotation(at: viewModel.currentClipRelativeTime) ?? 0.0 },
+                        get: { viewModel.selectedClip?.rotation(atRelativeTime: viewModel.currentClipRelativeTime) ?? 0.0 },
                         set: { val in
                             viewModel.updateAnimatableProperty(.rotation, value: val)
                         }
@@ -363,6 +391,12 @@ public struct InspectorView: View {
                     hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .rotation),
                     onToggleKeyframe: {
                         viewModel.toggleKeyframe(for: .rotation)
+                    },
+                    onPreviousKeyframe: {
+                        viewModel.jumpToPreviousKeyframe(for: .rotation)
+                    },
+                    onNextKeyframe: {
+                        viewModel.jumpToNextKeyframe(for: .rotation)
                     }
                 )
             }
@@ -377,7 +411,7 @@ public struct InspectorView: View {
                 TransformControlRow(
                     title: "Opacidad",
                     value: Binding(
-                        get: { (viewModel.selectedClip?.opacity(at: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
+                        get: { (viewModel.selectedClip?.opacity(atRelativeTime: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
                         set: { val in
                             viewModel.updateAnimatableProperty(.opacity, value: val / 100.0)
                         }
@@ -390,6 +424,12 @@ public struct InspectorView: View {
                     hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .opacity),
                     onToggleKeyframe: {
                         viewModel.toggleKeyframe(for: .opacity)
+                    },
+                    onPreviousKeyframe: {
+                        viewModel.jumpToPreviousKeyframe(for: .opacity)
+                    },
+                    onNextKeyframe: {
+                        viewModel.jumpToNextKeyframe(for: .opacity)
                     }
                 )
             }
@@ -518,7 +558,7 @@ public struct InspectorView: View {
                 TransformControlRow(
                     title: "Volumen",
                     value: Binding(
-                        get: { (viewModel.selectedClip?.volume(at: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
+                        get: { (viewModel.selectedClip?.volume(atRelativeTime: viewModel.currentClipRelativeTime) ?? 1.0) * 100.0 },
                         set: { val in
                             viewModel.updateAnimatableProperty(.volume, value: val / 100.0)
                         }
@@ -531,8 +571,107 @@ public struct InspectorView: View {
                     hasAnyKeyframes: viewModel.hasAnyKeyframes(for: .volume),
                     onToggleKeyframe: {
                         viewModel.toggleKeyframe(for: .volume)
+                    },
+                    onPreviousKeyframe: {
+                        viewModel.jumpToPreviousKeyframe(for: .volume)
+                    },
+                    onNextKeyframe: {
+                        viewModel.jumpToNextKeyframe(for: .volume)
                     }
                 )
+
+                // LISTA DETALLADA DE FOTOGRAMAS CLAVE DE VOLUMEN (Edición directa de cada punto)
+                if let clip = viewModel.selectedClip, !clip.volumeKeyframes.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Puntos de Volumen (\(clip.volumeKeyframes.count))")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Button {
+                                viewModel.toggleKeyframe(for: .volume)
+                            } label: {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "plus")
+                                    Text("Agregar en cabezal")
+                                }
+                                .font(.system(size: 9, weight: .medium))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(DesignSystem.selectedClipBorder)
+                        }
+
+                        ForEach(clip.volumeKeyframes.sorted(by: { $0.seconds < $1.seconds })) { kf in
+                            HStack(spacing: 6) {
+                                Button {
+                                    viewModel.playbackEngine.seek(to: clip.startTime + kf.seconds)
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "diamond.fill")
+                                            .font(.system(size: 8))
+                                            .foregroundColor(DesignSystem.selectedClipBorder)
+                                        Text(String(format: "+%.2fs", kf.seconds))
+                                            .font(DesignSystem.monoFont)
+                                            .foregroundColor(.primary)
+                                    }
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 2)
+                                    .background(Color.white.opacity(0.08))
+                                    .cornerRadius(4)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Saltar cabezal a este fotograma clave")
+
+                                Slider(
+                                    value: Binding(
+                                        get: { kf.value * 100.0 },
+                                        set: { newVal in
+                                            viewModel.updateKeyframeDirectly(
+                                                clipId: clip.id,
+                                                property: .volume,
+                                                keyframeId: kf.id,
+                                                newValue: newVal / 100.0
+                                            )
+                                        }
+                                    ),
+                                    in: 0...100,
+                                    step: 1.0
+                                )
+                                .controlSize(.mini)
+
+                                Text("\(Int(kf.value * 100))%")
+                                    .font(DesignSystem.monoFont)
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 34, alignment: .trailing)
+
+                                Button {
+                                    viewModel.removeKeyframeDirectly(
+                                        clipId: clip.id,
+                                        property: .volume,
+                                        keyframeId: kf.id
+                                    )
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary.opacity(0.7))
+                                }
+                                .buttonStyle(.plain)
+                                .help("Eliminar este fotograma clave")
+                            }
+                            .padding(.vertical, 2)
+                            .padding(.horizontal, 6)
+                            .background(Color.black.opacity(0.25))
+                            .cornerRadius(5)
+                        }
+                    }
+                    .padding(8)
+                    .background(Color.white.opacity(0.03))
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+                }
             }
 
             Divider().foregroundColor(DesignSystem.border)
@@ -598,6 +737,25 @@ public struct InspectorView: View {
                     .controlSize(.mini)
                 }
             }
+
+            // Opción de repetición en bucle del clip
+            Toggle(isOn: Binding(
+                get: { viewModel.selectedClip?.isLooping ?? false },
+                set: { val in
+                    viewModel.updateSelectedClip { $0.isLooping = val }
+                }
+            )) {
+                HStack(spacing: 5) {
+                    Image(systemName: "repeat")
+                        .font(.system(size: 10))
+                        .foregroundColor((viewModel.selectedClip?.isLooping ?? false) ? DesignSystem.selectedClipBorder : .secondary)
+                    Text("Repetir clip en bucle continuo (Loop)")
+                        .font(.system(size: 11, weight: .medium))
+                }
+            }
+            .toggleStyle(.checkbox)
+            .padding(.top, 4)
+            .help("Repite el audio o video de este clip continuamente a lo largo de toda su duración")
         }
     }
 

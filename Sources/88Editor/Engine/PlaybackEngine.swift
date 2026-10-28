@@ -35,6 +35,7 @@ public final class PlaybackEngine: ObservableObject {
     @Published public var totalDuration: Double = 10.0
     @Published public var previewScale: PreviewScale = .full
     @Published public private(set) var isScrubbing: Bool = false
+    @Published public var isLooping: Bool = false
 
     private var timeObserverToken: Any?
     private var itemDidEndObserver: Any?
@@ -97,8 +98,13 @@ public final class PlaybackEngine: ObservableObject {
                 guard let self = self else { return }
                 // Solo pausar si verdaderamente se llegó al final de la duración total del proyecto
                 if self.currentTime >= self.totalDuration - 0.15 {
-                    self.pause()
-                    self.seek(to: 0.0)
+                    if self.isLooping {
+                        self.seek(to: 0.0)
+                        self.play()
+                    } else {
+                        self.pause()
+                        self.seek(to: 0.0)
+                    }
                 }
             }
         }
@@ -113,6 +119,11 @@ public final class PlaybackEngine: ObservableObject {
     /// Actualiza la duración total conocida del proyecto
     public func updateTotalDuration(_ duration: Double) {
         self.totalDuration = max(duration, 1.0)
+    }
+
+    /// Alterna la reproducción continua en bucle (Loop)
+    public func toggleLoop() {
+        isLooping.toggle()
     }
 
     /// Alterna entre reproducción y pausa (Barra espaciadora)
@@ -155,8 +166,13 @@ public final class PlaybackEngine: ObservableObject {
                     // Si AVPlayer se detuvo por falta de pista AV (sobre imágenes fijas o vacíos):
                     let nextTime = self.currentTime + (1.0 / 30.0)
                     if nextTime >= self.totalDuration {
-                        self.pause()
-                        self.seek(to: 0.0)
+                        if self.isLooping {
+                            self.seek(to: 0.0)
+                            self.play()
+                        } else {
+                            self.pause()
+                            self.seek(to: 0.0)
+                        }
                     } else {
                         self.currentTime = nextTime
                         // Sincronizar AVPlayer

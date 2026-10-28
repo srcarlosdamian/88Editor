@@ -4,13 +4,26 @@ import CoreMedia
 
 /// Propiedades animables mediante fotogramas clave (Keyframes)
 public enum AnimatableProperty: String, CaseIterable, Identifiable {
-    case opacity = "Opacidad"
     case volume = "Volumen"
+    case opacity = "Opacidad"
+    case positionX = "Posición X"
+    case positionY = "Posición Y"
     case scale = "Escala"
     case rotation = "Rotación"
 
     public var id: String { rawValue }
     public var displayName: String { rawValue }
+
+    public var iconName: String {
+        switch self {
+        case .volume: return "speaker.wave.2.fill"
+        case .opacity: return "eye.fill"
+        case .positionX: return "arrow.left.and.right"
+        case .positionY: return "arrow.up.and.down"
+        case .scale: return "arrow.up.left.and.arrow.down.right"
+        case .rotation: return "arrow.triangle.2.circlepath"
+        }
+    }
 }
 
 /// Un clip situado en la línea de tiempo multicapa independiente.
@@ -39,12 +52,15 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
     public var opacity: Double // 0.0 a 1.0
     public var volume: Double  // 0.0 a 1.0
     public var isMuted: Bool
+    public var isLooping: Bool
 
     // Pistas de Fotogramas Clave (Keyframes)
     public var opacityKeyframes: [Keyframe]
     public var volumeKeyframes: [Keyframe]
     public var scaleKeyframes: [Keyframe]
     public var rotationKeyframes: [Keyframe]
+    public var positionXKeyframes: [Keyframe]
+    public var positionYKeyframes: [Keyframe]
 
     // Propiedades tipográficas opcionales (títulos / texto)
     public var textOverlay: String?
@@ -84,10 +100,13 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
         opacity: Double = 1.0,
         volume: Double = 1.0,
         isMuted: Bool = false,
+        isLooping: Bool = false,
         opacityKeyframes: [Keyframe] = [],
         volumeKeyframes: [Keyframe] = [],
         scaleKeyframes: [Keyframe] = [],
         rotationKeyframes: [Keyframe] = [],
+        positionXKeyframes: [Keyframe] = [],
+        positionYKeyframes: [Keyframe] = [],
         textOverlay: String? = nil,
         fontName: String? = nil,
         fontSize: Double? = nil,
@@ -116,10 +135,13 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
         self.opacity = max(0.0, min(1.0, opacity))
         self.volume = max(0.0, min(1.0, volume))
         self.isMuted = isMuted
+        self.isLooping = isLooping
         self.opacityKeyframes = opacityKeyframes
         self.volumeKeyframes = volumeKeyframes
         self.scaleKeyframes = scaleKeyframes
         self.rotationKeyframes = rotationKeyframes
+        self.positionXKeyframes = positionXKeyframes
+        self.positionYKeyframes = positionYKeyframes
         self.textOverlay = textOverlay
         self.fontName = fontName
         self.fontSize = fontSize
@@ -155,11 +177,14 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
         self.opacity = try container.decodeIfPresent(Double.self, forKey: .opacity) ?? 1.0
         self.volume = try container.decodeIfPresent(Double.self, forKey: .volume) ?? 1.0
         self.isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+        self.isLooping = try container.decodeIfPresent(Bool.self, forKey: .isLooping) ?? false
 
         self.opacityKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .opacityKeyframes) ?? []
         self.volumeKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .volumeKeyframes) ?? []
         self.scaleKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .scaleKeyframes) ?? []
         self.rotationKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .rotationKeyframes) ?? []
+        self.positionXKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .positionXKeyframes) ?? []
+        self.positionYKeyframes = try container.decodeIfPresent([Keyframe].self, forKey: .positionYKeyframes) ?? []
 
         self.textOverlay = try container.decodeIfPresent(String.self, forKey: .textOverlay)
         self.fontName = try container.decodeIfPresent(String.self, forKey: .fontName)
@@ -184,44 +209,88 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
     }
 
     // MARK: - Consulta de Valores Interpolados
+    public func keyframes(for property: AnimatableProperty) -> [Keyframe] {
+        switch property {
+        case .volume: return volumeKeyframes
+        case .opacity: return opacityKeyframes
+        case .positionX: return positionXKeyframes
+        case .positionY: return positionYKeyframes
+        case .scale: return scaleKeyframes
+        case .rotation: return rotationKeyframes
+        }
+    }
+
     /// Retorna la opacidad interpolada en el tiempo absoluto de la línea de tiempo
     public func opacity(at timelineTime: Double) -> Double {
-        let relativeTime = timelineTime - startTime
-        return opacityKeyframes.interpolatedValue(at: relativeTime, defaultValue: opacity)
+        opacity(atRelativeTime: timelineTime - startTime)
+    }
+
+    public func opacity(atRelativeTime relativeTime: Double) -> Double {
+        opacityKeyframes.interpolatedValue(at: relativeTime, defaultValue: opacity)
     }
 
     /// Retorna el volumen interpolado en el tiempo absoluto de la línea de tiempo
     public func volume(at timelineTime: Double) -> Double {
+        volume(atRelativeTime: timelineTime - startTime)
+    }
+
+    public func volume(atRelativeTime relativeTime: Double) -> Double {
         guard !isMuted else { return 0.0 }
-        let relativeTime = timelineTime - startTime
         return volumeKeyframes.interpolatedValue(at: relativeTime, defaultValue: volume)
     }
 
     /// Retorna la escala interpolada en el tiempo absoluto de la línea de tiempo
     public func scale(at timelineTime: Double) -> Double {
-        let relativeTime = timelineTime - startTime
-        return scaleKeyframes.interpolatedValue(at: relativeTime, defaultValue: scale)
+        scale(atRelativeTime: timelineTime - startTime)
+    }
+
+    public func scale(atRelativeTime relativeTime: Double) -> Double {
+        scaleKeyframes.interpolatedValue(at: relativeTime, defaultValue: scale)
     }
 
     /// Retorna la rotación interpolada en el tiempo absoluto de la línea de tiempo
     public func rotation(at timelineTime: Double) -> Double {
-        let relativeTime = timelineTime - startTime
-        return rotationKeyframes.interpolatedValue(at: relativeTime, defaultValue: rotation)
+        rotation(atRelativeTime: timelineTime - startTime)
     }
 
-    // MARK: - Gestión de Keyframes
+    public func rotation(atRelativeTime relativeTime: Double) -> Double {
+        rotationKeyframes.interpolatedValue(at: relativeTime, defaultValue: rotation)
+    }
+
+    /// Retorna el desplazamiento X interpolado en el tiempo absoluto de la línea de tiempo
+    public func positionX(at timelineTime: Double) -> Double {
+        positionX(atRelativeTime: timelineTime - startTime)
+    }
+
+    public func positionX(atRelativeTime relativeTime: Double) -> Double {
+        positionXKeyframes.interpolatedValue(at: relativeTime, defaultValue: positionX)
+    }
+
+    /// Retorna el desplazamiento Y interpolado en el tiempo absoluto de la línea de tiempo
+    public func positionY(at timelineTime: Double) -> Double {
+        positionY(atRelativeTime: timelineTime - startTime)
+    }
+
+    public func positionY(atRelativeTime relativeTime: Double) -> Double {
+        positionYKeyframes.interpolatedValue(at: relativeTime, defaultValue: positionY)
+    }
+
+    // MARK: - Navegación y Gestión de Keyframes
+    /// Devuelve el tiempo del fotograma clave anterior al tiempo dado
+    public func previousKeyframeTime(for property: AnimatableProperty, relativeTo relativeTime: Double) -> Double? {
+        let kfs = keyframes(for: property).sorted { $0.seconds < $1.seconds }
+        return kfs.last(where: { $0.seconds < relativeTime - 0.05 })?.seconds
+    }
+
+    /// Devuelve el tiempo del fotograma clave posterior al tiempo dado
+    public func nextKeyframeTime(for property: AnimatableProperty, relativeTo relativeTime: Double) -> Double? {
+        let kfs = keyframes(for: property).sorted { $0.seconds < $1.seconds }
+        return kfs.first(where: { $0.seconds > relativeTime + 0.05 })?.seconds
+    }
+
     /// Comprueba si existe un keyframe dentro de una tolerancia temporal
-    public func hasKeyframe(for property: AnimatableProperty, at relativeTime: Double, tolerance: Double = 0.08) -> Bool {
-        switch property {
-        case .opacity:
-            return opacityKeyframes.contains { abs($0.seconds - relativeTime) < tolerance }
-        case .volume:
-            return volumeKeyframes.contains { abs($0.seconds - relativeTime) < tolerance }
-        case .scale:
-            return scaleKeyframes.contains { abs($0.seconds - relativeTime) < tolerance }
-        case .rotation:
-            return rotationKeyframes.contains { abs($0.seconds - relativeTime) < tolerance }
-        }
+    public func hasKeyframe(for property: AnimatableProperty, at relativeTime: Double, tolerance: Double = 0.15) -> Bool {
+        keyframes(for: property).contains { abs($0.seconds - relativeTime) < tolerance }
     }
 
     /// Alterna un keyframe: si existe lo elimina; si no existe, lo agrega con el valor indicado
@@ -238,24 +307,74 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
     public mutating func setKeyframe(for property: AnimatableProperty, at relativeTime: Double, value: Double) {
         let clampedTime = max(0, min(relativeTime, duration))
         switch property {
-        case .opacity:
-            upsertKeyframe(in: &opacityKeyframes, at: clampedTime, value: value)
         case .volume:
-            upsertKeyframe(in: &volumeKeyframes, at: clampedTime, value: value)
+            upsertKeyframe(in: &volumeKeyframes, at: clampedTime, value: max(0.0, min(1.0, value)))
+        case .opacity:
+            upsertKeyframe(in: &opacityKeyframes, at: clampedTime, value: max(0.0, min(1.0, value)))
+        case .positionX:
+            upsertKeyframe(in: &positionXKeyframes, at: clampedTime, value: value)
+        case .positionY:
+            upsertKeyframe(in: &positionYKeyframes, at: clampedTime, value: value)
         case .scale:
-            upsertKeyframe(in: &scaleKeyframes, at: clampedTime, value: value)
+            upsertKeyframe(in: &scaleKeyframes, at: clampedTime, value: max(0.05, value))
         case .rotation:
             upsertKeyframe(in: &rotationKeyframes, at: clampedTime, value: value)
         }
     }
 
-    /// Elimina el keyframe más cercano
-    public mutating func removeKeyframe(for property: AnimatableProperty, at relativeTime: Double, tolerance: Double = 0.08) {
+    /// Actualiza directamente el valor de un keyframe por su ID
+    public mutating func updateKeyframe(property: AnimatableProperty, id: UUID, newValue: Double) {
         switch property {
+        case .volume:
+            if let idx = volumeKeyframes.firstIndex(where: { $0.id == id }) {
+                volumeKeyframes[idx].value = max(0.0, min(1.0, newValue))
+            }
         case .opacity:
-            opacityKeyframes.removeAll { abs($0.seconds - relativeTime) < tolerance }
+            if let idx = opacityKeyframes.firstIndex(where: { $0.id == id }) {
+                opacityKeyframes[idx].value = max(0.0, min(1.0, newValue))
+            }
+        case .positionX:
+            if let idx = positionXKeyframes.firstIndex(where: { $0.id == id }) {
+                positionXKeyframes[idx].value = newValue
+            }
+        case .positionY:
+            if let idx = positionYKeyframes.firstIndex(where: { $0.id == id }) {
+                positionYKeyframes[idx].value = newValue
+            }
+        case .scale:
+            if let idx = scaleKeyframes.firstIndex(where: { $0.id == id }) {
+                scaleKeyframes[idx].value = max(0.05, newValue)
+            }
+        case .rotation:
+            if let idx = rotationKeyframes.firstIndex(where: { $0.id == id }) {
+                rotationKeyframes[idx].value = newValue
+            }
+        }
+    }
+
+    /// Elimina directamente un keyframe por su ID
+    public mutating func removeKeyframe(property: AnimatableProperty, id: UUID) {
+        switch property {
+        case .volume: volumeKeyframes.removeAll { $0.id == id }
+        case .opacity: opacityKeyframes.removeAll { $0.id == id }
+        case .positionX: positionXKeyframes.removeAll { $0.id == id }
+        case .positionY: positionYKeyframes.removeAll { $0.id == id }
+        case .scale: scaleKeyframes.removeAll { $0.id == id }
+        case .rotation: rotationKeyframes.removeAll { $0.id == id }
+        }
+    }
+
+    /// Elimina el keyframe más cercano en el tiempo especificado
+    public mutating func removeKeyframe(for property: AnimatableProperty, at relativeTime: Double, tolerance: Double = 0.15) {
+        switch property {
         case .volume:
             volumeKeyframes.removeAll { abs($0.seconds - relativeTime) < tolerance }
+        case .opacity:
+            opacityKeyframes.removeAll { abs($0.seconds - relativeTime) < tolerance }
+        case .positionX:
+            positionXKeyframes.removeAll { abs($0.seconds - relativeTime) < tolerance }
+        case .positionY:
+            positionYKeyframes.removeAll { abs($0.seconds - relativeTime) < tolerance }
         case .scale:
             scaleKeyframes.removeAll { abs($0.seconds - relativeTime) < tolerance }
         case .rotation:
@@ -263,7 +382,7 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
         }
     }
 
-    private func upsertKeyframe(in list: inout [Keyframe], at time: Double, value: Double, tolerance: Double = 0.08) {
+    private func upsertKeyframe(in list: inout [Keyframe], at time: Double, value: Double, tolerance: Double = 0.20) {
         if let idx = list.firstIndex(where: { abs($0.seconds - time) < tolerance }) {
             list[idx].value = value
         } else {
@@ -280,6 +399,8 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
         for k in volumeKeyframes { times.insert(k.seconds) }
         for k in scaleKeyframes { times.insert(k.seconds) }
         for k in rotationKeyframes { times.insert(k.seconds) }
+        for k in positionXKeyframes { times.insert(k.seconds) }
+        for k in positionYKeyframes { times.insert(k.seconds) }
         return times.sorted()
     }
 
@@ -300,6 +421,8 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
         firstClip.volumeKeyframes = volumeKeyframes.filter { $0.seconds <= firstDuration }
         firstClip.scaleKeyframes = scaleKeyframes.filter { $0.seconds <= firstDuration }
         firstClip.rotationKeyframes = rotationKeyframes.filter { $0.seconds <= firstDuration }
+        firstClip.positionXKeyframes = positionXKeyframes.filter { $0.seconds <= firstDuration }
+        firstClip.positionYKeyframes = positionYKeyframes.filter { $0.seconds <= firstDuration }
 
         // Segunda mitad
         let secondClip = TimelineClip(
@@ -318,10 +441,13 @@ public struct TimelineClip: Identifiable, Codable, Equatable {
             opacity: self.opacity,
             volume: self.volume,
             isMuted: self.isMuted,
+            isLooping: self.isLooping,
             opacityKeyframes: opacityKeyframes.filter { $0.seconds > firstDuration }.map { Keyframe(seconds: $0.seconds - firstDuration, value: $0.value) },
             volumeKeyframes: volumeKeyframes.filter { $0.seconds > firstDuration }.map { Keyframe(seconds: $0.seconds - firstDuration, value: $0.value) },
             scaleKeyframes: scaleKeyframes.filter { $0.seconds > firstDuration }.map { Keyframe(seconds: $0.seconds - firstDuration, value: $0.value) },
             rotationKeyframes: rotationKeyframes.filter { $0.seconds > firstDuration }.map { Keyframe(seconds: $0.seconds - firstDuration, value: $0.value) },
+            positionXKeyframes: positionXKeyframes.filter { $0.seconds > firstDuration }.map { Keyframe(seconds: $0.seconds - firstDuration, value: $0.value) },
+            positionYKeyframes: positionYKeyframes.filter { $0.seconds > firstDuration }.map { Keyframe(seconds: $0.seconds - firstDuration, value: $0.value) },
             textOverlay: self.textOverlay,
             fontName: self.fontName,
             fontSize: self.fontSize,

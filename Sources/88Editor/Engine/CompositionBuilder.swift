@@ -99,30 +99,47 @@ public final class CompositionBuilder {
                     let clipDuration = CMTime(seconds: clip.duration, preferredTimescale: 600)
                     let sourceTimeRange = CMTimeRange(start: sourceInTime, duration: clipDuration)
 
-                    // A) Si es video: insertar en la pista de video para decodificación de fotogramas
-                    if assetMeta.mediaType == .video, let compTrack = compVideoTrack {
-                        if let sourceVideoTrack = try? await avAsset.loadTracks(withMediaType: .video).first {
-                            try? compTrack.insertTimeRange(sourceTimeRange, of: sourceVideoTrack, at: clipStartTime)
+                    let assetDurationCM = (try? await avAsset.load(.duration)) ?? .zero
+                    let assetDurationSec = CMTimeGetSeconds(assetDurationCM)
+                    let availSource = max(0.1, (assetDurationSec.isFinite && assetDurationSec > 0 ? assetDurationSec : clip.duration) - clip.sourceIn)
+
+                    if clip.isLooping && availSource > 0.05 {
+                        var currentOffset: Double = 0.0
+                        while currentOffset < clip.duration {
+                            let chunkDuration = min(availSource, clip.duration - currentOffset)
+                            let chunkRange = CMTimeRange(start: CMTime(seconds: clip.sourceIn, preferredTimescale: 600), duration: CMTime(seconds: chunkDuration, preferredTimescale: 600))
+                            let atTime = CMTime(seconds: clip.startTime + currentOffset, preferredTimescale: 600)
+                            if assetMeta.mediaType == .video, let compTrack = compVideoTrack, let sourceVideoTrack = try? await avAsset.loadTracks(withMediaType: .video).first {
+                                try? compTrack.insertTimeRange(chunkRange, of: sourceVideoTrack, at: atTime)
+                            }
+                            if let audioTrack = compAudioTrack, let sourceAudioTrack = try? await avAsset.loadTracks(withMediaType: .audio).first {
+                                try? audioTrack.insertTimeRange(chunkRange, of: sourceAudioTrack, at: atTime)
+                            }
+                            currentOffset += chunkDuration
+                        }
+                    } else {
+                        // A) Si es video: insertar en la pista de video para decodificación de fotogramas
+                        if assetMeta.mediaType == .video, let compTrack = compVideoTrack {
+                            if let sourceVideoTrack = try? await avAsset.loadTracks(withMediaType: .video).first {
+                                try? compTrack.insertTimeRange(sourceTimeRange, of: sourceVideoTrack, at: clipStartTime)
+                            }
+                        }
+
+                        // B) Audio integrado del archivo de video
+                        if let audioTrack = compAudioTrack,
+                           let sourceAudioTrack = try? await avAsset.loadTracks(withMediaType: .audio).first {
+                            try? audioTrack.insertTimeRange(sourceTimeRange, of: sourceAudioTrack, at: clipStartTime)
                         }
                     }
 
-                    // B) Audio integrado del archivo de video
-                    if let audioTrack = compAudioTrack,
-                       let sourceAudioTrack = try? await avAsset.loadTracks(withMediaType: .audio).first {
-                        do {
-                            try audioTrack.insertTimeRange(sourceTimeRange, of: sourceAudioTrack, at: clipStartTime)
-                            if let params = videoAudioParams {
-                                applyVolumeKeyframes(
-                                    clip: clip,
-                                    isTrackMuted: track.isMuted,
-                                    clipStartTime: clipStartTime,
-                                    clipDuration: clipDuration,
-                                    params: params
-                                )
-                            }
-                        } catch {
-                            print("[88 Editor] Error insertando audio de video: \(error.localizedDescription)")
-                        }
+                    if let params = videoAudioParams {
+                        applyVolumeKeyframes(
+                            clip: clip,
+                            isTrackMuted: track.isMuted,
+                            clipStartTime: clipStartTime,
+                            clipDuration: clipDuration,
+                            params: params
+                        )
                     }
                 }
 
@@ -157,8 +174,23 @@ public final class CompositionBuilder {
                     let clipDuration = CMTime(seconds: clip.duration, preferredTimescale: 600)
                     let sourceTimeRange = CMTimeRange(start: sourceInTime, duration: clipDuration)
 
+                    let assetDurationCM = (try? await avAsset.load(.duration)) ?? .zero
+                    let assetDurationSec = CMTimeGetSeconds(assetDurationCM)
+                    let availSource = max(0.1, (assetDurationSec.isFinite && assetDurationSec > 0 ? assetDurationSec : clip.duration) - clip.sourceIn)
+
                     do {
-                        try compAudioTrack.insertTimeRange(sourceTimeRange, of: sourceAudioTrack, at: clipStartTime)
+                        if clip.isLooping && availSource > 0.05 {
+                            var currentOffset: Double = 0.0
+                            while currentOffset < clip.duration {
+                                let chunkDuration = min(availSource, clip.duration - currentOffset)
+                                let chunkRange = CMTimeRange(start: CMTime(seconds: clip.sourceIn, preferredTimescale: 600), duration: CMTime(seconds: chunkDuration, preferredTimescale: 600))
+                                let atTime = CMTime(seconds: clip.startTime + currentOffset, preferredTimescale: 600)
+                                try compAudioTrack.insertTimeRange(chunkRange, of: sourceAudioTrack, at: atTime)
+                                currentOffset += chunkDuration
+                            }
+                        } else {
+                            try compAudioTrack.insertTimeRange(sourceTimeRange, of: sourceAudioTrack, at: clipStartTime)
+                        }
                         applyVolumeKeyframes(
                             clip: clip,
                             isTrackMuted: track.isMuted,

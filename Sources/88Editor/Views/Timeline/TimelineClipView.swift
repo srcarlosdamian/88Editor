@@ -39,7 +39,13 @@ public struct TimelineClipView: View {
     var onMoveTrackDown: (() -> Void)? = nil
     var onBringToFront: (() -> Void)? = nil
     var onSendToBack: (() -> Void)? = nil
+    var playheadTime: Double = 0.0
+    var onSeekToKeyframe: ((Double) -> Void)? = nil
+    var onUpdateKeyframeValue: ((AnimatableProperty, UUID, Double) -> Void)? = nil
 
+    @State private var activePropertyOverride: AnimatableProperty? = nil
+    @State private var draggingKeyframeId: UUID? = nil
+    @State private var draggingKeyframeValue: Double? = nil
     @State private var dragOffsetX: CGFloat = 0
     @State private var dragOffsetY: CGFloat = 0
     @State private var isDragging: Bool = false
@@ -56,6 +62,70 @@ public struct TimelineClipView: View {
         max(0, CGFloat(clip.startTime) * CGFloat(zoom) + trimInOffset + dragOffsetX)
     }
 
+    private var hasAutomationSublane: Bool {
+        return !clip.allKeyframeTimes.isEmpty || (isAudioTrack && !clip.volumeKeyframes.isEmpty)
+    }
+
+    private var animatedProperties: [AnimatableProperty] {
+        AnimatableProperty.allCases.filter { !clip.keyframes(for: $0).isEmpty }
+    }
+
+    private var activeProperty: AnimatableProperty {
+        if let overrideProp = activePropertyOverride, !clip.keyframes(for: overrideProp).isEmpty {
+            return overrideProp
+        }
+        if isAudioTrack || !clip.volumeKeyframes.isEmpty {
+            return .volume
+        }
+        if !clip.positionXKeyframes.isEmpty { return .positionX }
+        if !clip.positionYKeyframes.isEmpty { return .positionY }
+        if !clip.opacityKeyframes.isEmpty { return .opacity }
+        if !clip.scaleKeyframes.isEmpty { return .scale }
+        if !clip.rotationKeyframes.isEmpty { return .rotation }
+        return isAudioTrack ? .volume : .opacity
+    }
+
+    private var sublaneHeight: CGFloat {
+        max(16, min(22, height * 0.36))
+    }
+
+    private func cycleNextProperty() {
+        let props = animatedProperties
+        guard props.count > 1 else { return }
+        if let idx = props.firstIndex(of: activeProperty) {
+            let nextIdx = (idx + 1) % props.count
+            activePropertyOverride = props[nextIdx]
+        } else {
+            activePropertyOverride = props.first
+        }
+    }
+
+    private func badgeColor(for property: AnimatableProperty) -> Color {
+        switch property {
+        case .volume: return Color(red: 0.25, green: 0.8, blue: 1.0)
+        case .positionX, .positionY: return Color(red: 1.0, green: 0.75, blue: 0.25)
+        case .opacity: return Color(red: 0.85, green: 0.55, blue: 1.0)
+        case .scale: return Color(red: 0.35, green: 0.9, blue: 0.55)
+        case .rotation: return Color(red: 1.0, green: 0.45, blue: 0.45)
+        }
+    }
+
+    public static func yForValue(_ value: Double, property: AnimatableProperty, sublaneH: CGFloat) -> CGFloat {
+        let usableH = max(4.0, sublaneH - 6.0)
+        let norm: Double
+        switch property {
+        case .volume, .opacity:
+            norm = max(0.0, min(1.0, value))
+        case .scale:
+            norm = max(0.0, min(1.0, (value - 0.05) / 2.95))
+        case .rotation:
+            norm = max(0.0, min(1.0, (value + 180.0) / 360.0))
+        case .positionX, .positionY:
+            norm = max(0.0, min(1.0, (value + 400.0) / 800.0))
+        }
+        return (sublaneH - 3.0) - CGFloat(norm) * usableH
+    }
+
     public var body: some View {
         ZStack(alignment: .leading) {
             // Fondo / Cuerpo principal del clip
@@ -66,18 +136,20 @@ public struct TimelineClipView: View {
                         .stroke(isSelected ? DesignSystem.selectedClipBorder : DesignSystem.clipBorder, lineWidth: isSelected ? 2 : 1)
                 )
 
-            // Visualización de onda de audio para pistas de audio
-            if isAudioTrack && height >= 38 {
+            // Visualización de onda de audio para pistas de audio (despejada en la parte superior sin tapar)
+            if isAudioTrack && height >= 34 {
                 let barCount = max(2, Int(clipWidth / 4))
                 HStack(alignment: .center, spacing: 2) {
                     ForEach(0..<min(barCount, 400), id: \.self) { i in
-                        let pseudoRandomHeight = abs(sin(Double(i) * 0.45) * cos(Double(i) * 0.2)) * Double(height * 0.55) + 4
+                        let pseudoRandomHeight = abs(sin(Double(i) * 0.45) * cos(Double(i) * 0.2)) * Double(max(6, (height - (hasAutomationSublane ? sublaneHeight : 0)) * 0.52)) + 4
                         RoundedRectangle(cornerRadius: 1)
                             .fill(Color.white.opacity(0.35))
                             .frame(width: 2, height: CGFloat(pseudoRandomHeight))
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 16)
+                .padding(.bottom, hasAutomationSublane ? sublaneHeight + 2 : 4)
                 .padding(.horizontal, 8)
                 .allowsHitTesting(false)
             }
@@ -117,19 +189,97 @@ public struct TimelineClipView: View {
                 Spacer()
             }
 
-            // Visualización de Rombos de Keyframes en la Línea de Tiempo
-            if isSelected && !clip.allKeyframeTimes.isEmpty {
-                ForEach(clip.allKeyframeTimes, id: \.self) { kfTime in
-                    let kfX = CGFloat(kfTime) * CGFloat(zoom)
-                    if kfX >= 0 && kfX <= clipWidth {
-                        Image(systemName: "diamond.fill")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(DesignSystem.selectedClipBorder)
-                            .shadow(color: .black.opacity(0.9), radius: 2, x: 0, y: 1)
-                            .position(x: kfX, y: max(14, height - 12))
-                            .help(String(format: "Fotograma clave en +%.2fs", kfTime))
+            // Carril inferior minimalista de automatización (Organizado por propiedad, ej. 🔊 VOLUMEN, ✥ POSICIÓN)
+            if hasAutomationSublane && height >= 32 {
+                let prop = activeProperty
+                let kfs = clip.keyframes(for: prop).sorted(by: { $0.seconds < $1.seconds })
+
+                ZStack(alignment: .bottomLeading) {
+                    // Fondo oscuro del carril de automatización
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color(red: 0.05, green: 0.06, blue: 0.09).opacity(0.90))
+                        .overlay(
+                            Rectangle()
+                                .fill(Color.white.opacity(0.18))
+                                .frame(height: 1),
+                            alignment: .top
+                        )
+
+                    // Línea continua de automatización entre fotogramas clave
+                    if !kfs.isEmpty {
+                        TimelineAutomationCurveView(
+                            keyframes: kfs,
+                            clipWidth: clipWidth,
+                            sublaneHeight: sublaneHeight,
+                            zoom: zoom,
+                            property: prop,
+                            draggingKeyframeId: draggingKeyframeId,
+                            draggingKeyframeValue: draggingKeyframeValue
+                        )
+                        .allowsHitTesting(false)
+
+                        // Rombos interactivos de fotogramas clave en el carril inferior
+                        ForEach(kfs) { kf in
+                            let kfX = CGFloat(kf.seconds) * CGFloat(zoom)
+                            if kfX >= 0 && kfX <= clipWidth {
+                                let currentVal = (draggingKeyframeId == kf.id ? (draggingKeyframeValue ?? kf.value) : kf.value)
+                                let kfY = TimelineClipView.yForValue(currentVal, property: prop, sublaneH: sublaneHeight)
+                                let isNearPlayhead = abs(playheadTime - (clip.startTime + kf.seconds)) <= 0.15
+
+                                KeyframeDiamondNode(
+                                    keyframe: kf,
+                                    property: prop,
+                                    value: currentVal,
+                                    isNearPlayhead: isNearPlayhead,
+                                    onTap: {
+                                        onSelect()
+                                        onSeekToKeyframe?(clip.startTime + kf.seconds)
+                                    },
+                                    onDragValue: { newVal in
+                                        draggingKeyframeId = kf.id
+                                        draggingKeyframeValue = newVal
+                                        onUpdateKeyframeValue?(prop, kf.id, newVal)
+                                    },
+                                    onDragEnd: {
+                                        draggingKeyframeId = nil
+                                        draggingKeyframeValue = nil
+                                    }
+                                )
+                                .position(x: max(6, min(clipWidth - 6, kfX)), y: kfY)
+                            }
+                        }
                     }
+
+                    // Etiqueta minimalista inferior que indica la propiedad (ej. 🔊 VOLUMEN, ✥ POSICIÓN)
+                    Button {
+                        cycleNextProperty()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: prop.iconName)
+                                .font(.system(size: 7.5, weight: .bold))
+                            Text(prop.displayName.uppercased())
+                                .font(.system(size: 7.5, weight: .heavy))
+
+                            if animatedProperties.count > 1 {
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 6))
+                                    .foregroundColor(.white.opacity(0.6))
+                            }
+                        }
+                        .foregroundColor(badgeColor(for: prop))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1.5)
+                        .background(badgeColor(for: prop).opacity(0.18))
+                        .cornerRadius(3)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 5)
+                    .padding(.bottom, 2)
+                    .help(animatedProperties.count > 1 ? "Propiedad activa: \(prop.displayName). Clic para alternar (\(animatedProperties.count))" : "Automatización de \(prop.displayName)")
                 }
+                .frame(height: sublaneHeight)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
             }
 
             // Mango izquierdo de recorte (Trim In)
@@ -439,5 +589,136 @@ public struct RoundedCornerShape: Shape {
         }
 
         return path
+    }
+}
+
+// MARK: - Curva de Automatización Continua
+struct TimelineAutomationCurveView: View {
+    let keyframes: [Keyframe]
+    let clipWidth: CGFloat
+    let sublaneHeight: CGFloat
+    let zoom: Double
+    let property: AnimatableProperty
+    let draggingKeyframeId: UUID?
+    let draggingKeyframeValue: Double?
+
+    var body: some View {
+        Path { path in
+            guard let first = keyframes.first, let last = keyframes.last else { return }
+
+            let firstVal = (draggingKeyframeId == first.id ? (draggingKeyframeValue ?? first.value) : first.value)
+            let firstY = TimelineClipView.yForValue(firstVal, property: property, sublaneH: sublaneHeight)
+            let firstX = CGFloat(first.seconds) * CGFloat(zoom)
+
+            // Línea inicial desde el borde izquierdo del clip hasta el primer keyframe
+            path.move(to: CGPoint(x: 0, y: firstY))
+            path.addLine(to: CGPoint(x: firstX, y: firstY))
+
+            // Tramos interpolados entre keyframes consecutivos
+            for i in 0..<(keyframes.count - 1) {
+                let k1 = keyframes[i]
+                let k2 = keyframes[i + 1]
+
+                let v1 = (draggingKeyframeId == k1.id ? (draggingKeyframeValue ?? k1.value) : k1.value)
+                let v2 = (draggingKeyframeId == k2.id ? (draggingKeyframeValue ?? k2.value) : k2.value)
+
+                let p1 = CGPoint(x: CGFloat(k1.seconds) * CGFloat(zoom), y: TimelineClipView.yForValue(v1, property: property, sublaneH: sublaneHeight))
+                let p2 = CGPoint(x: CGFloat(k2.seconds) * CGFloat(zoom), y: TimelineClipView.yForValue(v2, property: property, sublaneH: sublaneHeight))
+
+                path.addLine(to: p1)
+                path.addLine(to: p2)
+            }
+
+            // Tramo final desde el último keyframe hasta el borde derecho del clip
+            let lastVal = (draggingKeyframeId == last.id ? (draggingKeyframeValue ?? last.value) : last.value)
+            let lastY = TimelineClipView.yForValue(lastVal, property: property, sublaneH: sublaneHeight)
+            let lastX = CGFloat(last.seconds) * CGFloat(zoom)
+            path.addLine(to: CGPoint(x: lastX, y: lastY))
+            path.addLine(to: CGPoint(x: clipWidth, y: lastY))
+        }
+        .stroke(DesignSystem.selectedClipBorder.opacity(0.85), lineWidth: 1.5)
+    }
+}
+
+// MARK: - Rombo Interactivo de Keyframe en la Línea de Tiempo
+struct KeyframeDiamondNode: View {
+    let keyframe: Keyframe
+    let property: AnimatableProperty
+    let value: Double
+    let isNearPlayhead: Bool
+    let onTap: () -> Void
+    let onDragValue: (Double) -> Void
+    let onDragEnd: () -> Void
+
+    @State private var dragStartValue: Double? = nil
+    @State private var isDragging: Bool = false
+
+    var body: some View {
+        ZStack {
+            // Halo brillante al pasar cabezal o al arrastrar
+            if isNearPlayhead || isDragging {
+                Circle()
+                    .fill(Color.white.opacity(0.35))
+                    .frame(width: 14, height: 14)
+            }
+
+            Image(systemName: "diamond.fill")
+                .font(.system(size: isNearPlayhead ? 10 : 8.5, weight: .bold))
+                .foregroundColor(isNearPlayhead ? .white : DesignSystem.selectedClipBorder)
+                .shadow(color: .black.opacity(0.9), radius: 2, x: 0, y: 1)
+        }
+        .frame(width: 16, height: 16)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap()
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { gesture in
+                    isDragging = true
+                    if dragStartValue == nil {
+                        dragStartValue = value
+                    }
+                    let base = dragStartValue ?? value
+                    let deltaY = -gesture.translation.height
+                    let stepFraction = Double(deltaY / 25.0)
+
+                    switch property {
+                    case .volume, .opacity:
+                        let newVal = max(0.0, min(1.0, base + stepFraction))
+                        onDragValue(newVal)
+                    case .scale:
+                        let newVal = max(0.05, min(5.0, base + stepFraction * 1.5))
+                        onDragValue(newVal)
+                    case .rotation:
+                        let newVal = max(-180.0, min(180.0, base + Double(deltaY) * 2.0))
+                        onDragValue(newVal)
+                    case .positionX, .positionY:
+                        let newVal = base + Double(deltaY) * 4.0
+                        onDragValue(newVal)
+                    }
+                }
+                .onEnded { _ in
+                    isDragging = false
+                    dragStartValue = nil
+                    onDragEnd()
+                }
+        )
+        .help(tooltipText)
+    }
+
+    private var tooltipText: String {
+        switch property {
+        case .volume:
+            return String(format: "Volumen: %d%% (+%.2fs)\n• Clic para cabezal\n• Arrastra verticalmente para cambiar volumen", Int(value * 100), keyframe.seconds)
+        case .opacity:
+            return String(format: "Opacidad: %d%% (+%.2fs)\n• Clic para cabezal\n• Arrastra verticalmente para cambiar opacidad", Int(value * 100), keyframe.seconds)
+        case .positionX, .positionY:
+            return String(format: "%@: %.0fpx (+%.2fs)\n• Clic para cabezal\n• Arrastra para cambiar posición", property.displayName, value, keyframe.seconds)
+        case .scale:
+            return String(format: "Escala: %.0f%% (+%.2fs)\n• Clic para cabezal\n• Arrastra para cambiar escala", value * 100, keyframe.seconds)
+        case .rotation:
+            return String(format: "Rotación: %.0f° (+%.2fs)\n• Clic para cabezal\n• Arrastra para cambiar rotación", value, keyframe.seconds)
+        }
     }
 }

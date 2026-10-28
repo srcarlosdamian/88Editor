@@ -414,29 +414,58 @@ public final class EditorViewModel: ObservableObject {
         return max(0, min(playbackEngine.currentTime - clip.startTime, clip.duration))
     }
 
-    /// Actualiza una propiedad animable (Opacidad, Volumen, Escala, Rotación).
-    /// Si existen fotogramas clave o hay uno en el cabezal, actualiza/crea el keyframe correspondiente.
+    /// Actualiza una propiedad animable (Opacidad, Volumen, Escala, Rotación, Posición).
+    /// Si existen fotogramas clave para esa propiedad y el cabezal está cerca (<=0.25s), actualiza ese keyframe.
+    /// Si hay keyframes pero no en el cabezal, crea uno nuevo.
     /// Si no hay fotogramas clave, actualiza el valor base del clip.
     public func updateAnimatableProperty(_ property: AnimatableProperty, value: Double) {
         guard let _ = selectedClipId else { return }
         let relTime = currentClipRelativeTime
 
         updateSelectedClip { clip in
-            let hasActiveKeyframe = clip.hasKeyframe(for: property, at: relTime)
-            let hasAnyKeyframe = (property == .opacity && !clip.opacityKeyframes.isEmpty) ||
-                                 (property == .volume && !clip.volumeKeyframes.isEmpty) ||
-                                 (property == .scale && !clip.scaleKeyframes.isEmpty) ||
-                                 (property == .rotation && !clip.rotationKeyframes.isEmpty)
-
-            if hasActiveKeyframe || hasAnyKeyframe {
-                clip.setKeyframe(for: property, at: relTime, value: value)
+            let kfs = clip.keyframes(for: property)
+            if !kfs.isEmpty {
+                // Si el cabezal está a menos de 250ms de un keyframe existente, lo actualiza para evitar duplicados indeseados
+                if let nearIdx = kfs.firstIndex(where: { abs($0.seconds - relTime) <= 0.25 }) {
+                    clip.updateKeyframe(property: property, id: kfs[nearIdx].id, newValue: value)
+                } else {
+                    clip.setKeyframe(for: property, at: relTime, value: value)
+                }
             } else {
                 switch property {
-                case .opacity: clip.opacity = value
-                case .volume: clip.volume = value
-                case .scale: clip.scale = value
+                case .opacity: clip.opacity = max(0.0, min(1.0, value))
+                case .volume: clip.volume = max(0.0, min(1.0, value))
+                case .scale: clip.scale = max(0.05, value)
                 case .rotation: clip.rotation = value
+                case .positionX: clip.positionX = value
+                case .positionY: clip.positionY = value
                 }
+            }
+        }
+    }
+
+    /// Actualiza directamente el valor de un keyframe específico por su ID
+    public func updateKeyframeDirectly(clipId: UUID, property: AnimatableProperty, keyframeId: UUID, newValue: Double) {
+        for (tIdx, track) in project.tracks.enumerated() {
+            if let cIdx = track.clips.firstIndex(where: { $0.id == clipId }) {
+                project.tracks[tIdx].clips[cIdx].updateKeyframe(property: property, id: keyframeId, newValue: newValue)
+                hasUnsavedChanges = true
+                objectWillChange.send()
+                debouncedRebuildComposition()
+                return
+            }
+        }
+    }
+
+    /// Elimina directamente un keyframe específico por su ID
+    public func removeKeyframeDirectly(clipId: UUID, property: AnimatableProperty, keyframeId: UUID) {
+        for (tIdx, track) in project.tracks.enumerated() {
+            if let cIdx = track.clips.firstIndex(where: { $0.id == clipId }) {
+                project.tracks[tIdx].clips[cIdx].removeKeyframe(property: property, id: keyframeId)
+                hasUnsavedChanges = true
+                objectWillChange.send()
+                debouncedRebuildComposition()
+                return
             }
         }
     }
@@ -1337,12 +1366,7 @@ public final class EditorViewModel: ObservableObject {
 
     public func hasAnyKeyframes(for property: AnimatableProperty) -> Bool {
         guard let clip = selectedClip else { return false }
-        switch property {
-        case .opacity: return !clip.opacityKeyframes.isEmpty
-        case .volume: return !clip.volumeKeyframes.isEmpty
-        case .scale: return !clip.scaleKeyframes.isEmpty
-        case .rotation: return !clip.rotationKeyframes.isEmpty
-        }
+        return !clip.keyframes(for: property).isEmpty
     }
 
     public func toggleKeyframe(for property: AnimatableProperty) {
@@ -1350,15 +1374,35 @@ public final class EditorViewModel: ObservableObject {
         let relativeTime = currentClipRelativeTime
         let val: Double
         switch property {
-        case .opacity: val = clip.opacity(at: relativeTime)
-        case .volume: val = clip.volume(at: relativeTime)
-        case .scale: val = clip.scale(at: relativeTime)
-        case .rotation: val = clip.rotation(at: relativeTime)
+        case .volume: val = clip.volume(atRelativeTime: relativeTime)
+        case .opacity: val = clip.opacity(atRelativeTime: relativeTime)
+        case .scale: val = clip.scale(atRelativeTime: relativeTime)
+        case .rotation: val = clip.rotation(atRelativeTime: relativeTime)
+        case .positionX: val = clip.positionX(atRelativeTime: relativeTime)
+        case .positionY: val = clip.positionY(atRelativeTime: relativeTime)
         }
         updateSelectedClip { c in
             c.toggleKeyframe(for: property, at: relativeTime, currentValue: val)
         }
         recordHistory(title: "Alternar fotograma clave: \(property.displayName)", icon: "diamond.fill")
+    }
+
+    /// Salta el cabezal directamente al fotograma clave anterior de la propiedad
+    public func jumpToPreviousKeyframe(for property: AnimatableProperty) {
+        guard let clip = selectedClip else { return }
+        let relativeTime = currentClipRelativeTime
+        if let prevTime = clip.previousKeyframeTime(for: property, relativeTo: relativeTime) {
+            playbackEngine.seek(to: clip.startTime + prevTime)
+        }
+    }
+
+    /// Salta el cabezal directamente al fotograma clave siguiente de la propiedad
+    public func jumpToNextKeyframe(for property: AnimatableProperty) {
+        guard let clip = selectedClip else { return }
+        let relativeTime = currentClipRelativeTime
+        if let nextTime = clip.nextKeyframeTime(for: property, relativeTo: relativeTime) {
+            playbackEngine.seek(to: clip.startTime + nextTime)
+        }
     }
 
     // MARK: - Historial de Acciones (Estilo Adobe: Deshacer / Rehacer / Viaje Temporal)

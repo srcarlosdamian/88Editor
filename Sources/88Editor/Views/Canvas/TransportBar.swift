@@ -88,6 +88,29 @@ public struct TransportBar: View {
                 }
                 .buttonStyle(.plain)
                 .help("Ir al final")
+
+                Divider()
+                    .frame(height: 14)
+                    .padding(.horizontal, 2)
+
+                // Botón Bucle / Loop (Repetir continuamente)
+                Button {
+                    playbackEngine.toggleLoop()
+                } label: {
+                    Image(systemName: "repeat")
+                        .font(.system(size: 11, weight: playbackEngine.isLooping ? .bold : .medium))
+                        .foregroundColor(playbackEngine.isLooping ? DesignSystem.selectedClipBorder : .secondary)
+                        .padding(5)
+                        .background(playbackEngine.isLooping ? DesignSystem.selectedClipBorder.opacity(0.18) : Color.clear)
+                        .cornerRadius(5)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(playbackEngine.isLooping ? DesignSystem.selectedClipBorder.opacity(0.4) : Color.clear, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("l", modifiers: [.command])
+                .help(playbackEngine.isLooping ? "Reproducción en bucle activada (⌘L)" : "Activar reproducción en bucle (⌘L)")
             }
 
             Spacer()

@@ -402,6 +402,8 @@ public struct CanvasView: View {
         let dynamicOpacity = clip.opacity(at: currentTime)
         let dynamicScale = clip.scale(at: currentTime)
         let dynamicRotation = clip.rotation(at: currentTime)
+        let dynamicPosX = clip.positionX(at: currentTime)
+        let dynamicPosY = clip.positionY(at: currentTime)
         let isSelected = (viewModel.selectedClipId == clip.id)
         let currentDrag = isSelected ? liveDragTranslation : .zero
         let currentScaleMult = isSelected ? liveScaleDelta : 1.0
@@ -476,7 +478,7 @@ public struct CanvasView: View {
                     viewModel.selectedTrackId = clip.trackId
                 }
         )
-        .offset(x: clip.positionX + currentDrag.width, y: clip.positionY + currentDrag.height)
+        .offset(x: dynamicPosX + currentDrag.width, y: dynamicPosY + currentDrag.height)
         .scaleEffect(dynamicScale * currentScaleMult)
         .rotationEffect(.degrees(dynamicRotation))
         .opacity(dynamicOpacity)
@@ -611,6 +613,8 @@ public struct CanvasView: View {
         let currentTime = viewModel.playbackEngine.currentTime
         let dynamicScale = clip.scale(at: currentTime)
         let dynamicRotation = clip.rotation(at: currentTime)
+        let dynamicPosX = clip.positionX(at: currentTime)
+        let dynamicPosY = clip.positionY(at: currentTime)
 
         let (baseW, baseH) = calculateElementDimensions(clip: clip, fittedWidth: fittedWidth, fittedHeight: fittedHeight)
 
@@ -633,10 +637,10 @@ public struct CanvasView: View {
                             state = value.translation
                         }
                         .onEnded { val in
-                            viewModel.updateSelectedClip {
-                                $0.positionX += val.translation.width
-                                $0.positionY += val.translation.height
-                            }
+                            let newX = dynamicPosX + val.translation.width
+                            let newY = dynamicPosY + val.translation.height
+                            viewModel.updateAnimatableProperty(.positionX, value: newX)
+                            viewModel.updateAnimatableProperty(.positionY, value: newY)
                             viewModel.recordHistory(title: "Mover objeto en lienzo", icon: "arrow.up.and.down.and.arrow.left.and.right")
                         }
                 )
@@ -681,7 +685,7 @@ public struct CanvasView: View {
                     }
                 }
         }
-        .offset(x: clip.positionX + liveDragTranslation.width, y: clip.positionY + liveDragTranslation.height)
+        .offset(x: dynamicPosX + liveDragTranslation.width, y: dynamicPosY + liveDragTranslation.height)
         .scaleEffect(dynamicScale * liveScaleDelta)
         .rotationEffect(.degrees(dynamicRotation))
     }

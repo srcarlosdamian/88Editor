@@ -104,6 +104,11 @@ public struct EditorMenuCommands: Commands {
                 NotificationCenter.default.post(name: .togglePlayback, object: nil)
             }
             .keyboardShortcut(.space, modifiers: [])
+
+            Button("Reproducir en Bucle (Loop)") {
+                NotificationCenter.default.post(name: .toggleLoopPlayback, object: nil)
+            }
+            .keyboardShortcut("l", modifiers: [.command])
         }
     }
 }
@@ -145,6 +150,7 @@ public extension Notification.Name {
     static let deleteClipAction = Notification.Name("88Editor.deleteClipAction")
     static let splitClipAtPlayhead = Notification.Name("88Editor.splitClipAtPlayhead")
     static let togglePlayback = Notification.Name("88Editor.togglePlayback")
+    static let toggleLoopPlayback = Notification.Name("88Editor.toggleLoopPlayback")
     static let undoAction = Notification.Name("88Editor.undoAction")
     static let redoAction = Notification.Name("88Editor.redoAction")
     static let openRecentProjectURL = Notification.Name("88Editor.openRecentProjectURL")

@@ -181,10 +181,12 @@ public final class EditorVideoCompositor: NSObject, AVVideoCompositing, @uncheck
                 targetH: targetH
             )
 
-            // Posicionamiento centrado en el visor con offsets de usuario
+            // Posicionamiento centrado en el visor con offsets de usuario (interpolado con fotogramas clave)
             // En SwiftUI, positionY positivo baja. En CoreGraphics cartesiano, bajar es restar.
-            let centerX = targetW / 2.0 + CGFloat(clip.positionX)
-            let centerY = targetH / 2.0 - CGFloat(clip.positionY)
+            let dynamicPosX = clip.positionX(at: currentTime)
+            let dynamicPosY = clip.positionY(at: currentTime)
+            let centerX = targetW / 2.0 + CGFloat(dynamicPosX)
+            let centerY = targetH / 2.0 - CGFloat(dynamicPosY)
 
             ctx.saveGState()
             ctx.setAlpha(CGFloat(dynamicOpacity))

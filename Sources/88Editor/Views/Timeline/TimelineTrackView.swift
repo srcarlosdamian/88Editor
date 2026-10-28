@@ -381,6 +381,13 @@ public struct TimelineTrackView: View {
                         },
                         onSendToBack: {
                             viewModel.sendTrackToBack(id: track.id)
+                        },
+                        playheadTime: viewModel.playbackEngine.currentTime,
+                        onSeekToKeyframe: { kfTime in
+                            viewModel.playbackEngine.seek(to: kfTime)
+                        },
+                        onUpdateKeyframeValue: { prop, kfId, newVal in
+                            viewModel.updateKeyframeDirectly(clipId: clip.id, property: prop, keyframeId: kfId, newValue: newVal)
                         }
                     )
                 }

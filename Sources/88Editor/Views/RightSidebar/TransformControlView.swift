@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Control compacto y numérico con slider y botón de fotograma clave (Keyframe Diamond)
+/// Control compacto y numérico con slider, navegación de fotogramas clave [◀] [◇] [▶] y botón de restablecimiento
 public struct TransformControlRow: View {
     let title: String
     @Binding var value: Double
@@ -13,6 +13,8 @@ public struct TransformControlRow: View {
     var isKeyframeActive: Bool = false
     var hasAnyKeyframes: Bool = false
     var onToggleKeyframe: (() -> Void)? = nil
+    var onPreviousKeyframe: (() -> Void)? = nil
+    var onNextKeyframe: (() -> Void)? = nil
 
     public init(
         title: String,
@@ -23,7 +25,9 @@ public struct TransformControlRow: View {
         defaultValue: Double = 0.0,
         isKeyframeActive: Bool = false,
         hasAnyKeyframes: Bool = false,
-        onToggleKeyframe: (() -> Void)? = nil
+        onToggleKeyframe: (() -> Void)? = nil,
+        onPreviousKeyframe: (() -> Void)? = nil,
+        onNextKeyframe: (() -> Void)? = nil
     ) {
         self.title = title
         self._value = value
@@ -34,20 +38,50 @@ public struct TransformControlRow: View {
         self.isKeyframeActive = isKeyframeActive
         self.hasAnyKeyframes = hasAnyKeyframes
         self.onToggleKeyframe = onToggleKeyframe
+        self.onPreviousKeyframe = onPreviousKeyframe
+        self.onNextKeyframe = onNextKeyframe
     }
 
     public var body: some View {
         VStack(spacing: 4) {
-            HStack(spacing: 6) {
-                // Botón de Rombo (Keyframe)
+            HStack(spacing: 4) {
+                // Navegación [◀] [◇] [▶] de fotogramas clave
                 if let toggleAction = onToggleKeyframe {
-                    Button(action: toggleAction) {
-                        Image(systemName: isKeyframeActive ? "diamond.fill" : "diamond")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(isKeyframeActive ? DesignSystem.selectedClipBorder : (hasAnyKeyframes ? .primary : .secondary.opacity(0.5)))
+                    HStack(spacing: 2) {
+                        // Anterior fotograma clave
+                        Button {
+                            onPreviousKeyframe?()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(hasAnyKeyframes ? .secondary : .secondary.opacity(0.25))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!hasAnyKeyframes)
+                        .help("Saltar al fotograma clave anterior")
+
+                        // Rombo Keyframe activo / inactivo
+                        Button(action: toggleAction) {
+                            Image(systemName: isKeyframeActive ? "diamond.fill" : "diamond")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(isKeyframeActive ? DesignSystem.selectedClipBorder : (hasAnyKeyframes ? .primary : .secondary.opacity(0.4)))
+                        }
+                        .buttonStyle(.plain)
+                        .help(isKeyframeActive ? "Eliminar fotograma clave en el cabezal" : "Agregar fotograma clave en el cabezal")
+
+                        // Siguiente fotograma clave
+                        Button {
+                            onNextKeyframe?()
+                        } label: {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(hasAnyKeyframes ? .secondary : .secondary.opacity(0.25))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!hasAnyKeyframes)
+                        .help("Saltar al siguiente fotograma clave")
                     }
-                    .buttonStyle(.plain)
-                    .help(isKeyframeActive ? "Eliminar fotograma clave en el cabezal" : "Agregar fotograma clave en el cabezal")
+                    .padding(.trailing, 2)
                 }
 
                 Text(title)

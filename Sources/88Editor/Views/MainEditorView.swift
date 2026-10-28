@@ -222,6 +222,9 @@ private struct EditorPlaybackNotificationHandler: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .togglePlayback)) { _ in
                 viewModel.playbackEngine.togglePlayPause()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleLoopPlayback)) { _ in
+                viewModel.playbackEngine.toggleLoop()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .undoAction)) { _ in
                 viewModel.undo()
             }
