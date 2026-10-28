@@ -392,7 +392,7 @@ public struct TimelineView: View {
                                         )
 
                                     TimelineRulerView(
-                                        duration: max(viewModel.project.totalDuration, Double(effectiveLaneWidth) / viewModel.timelineZoom),
+                                        duration: viewModel.project.totalDuration,
                                         zoom: viewModel.timelineZoom,
                                         workAreaIn: viewModel.project.workAreaIn,
                                         workAreaOut: viewModel.project.workAreaOut,
@@ -471,6 +471,27 @@ public struct TimelineView: View {
                                             .frame(height: max(geo.size.height - 27, tracksTotalHeight))
                                             .position(x: snapX, y: max(geo.size.height - 27, tracksTotalHeight) / 2)
                                             .shadow(color: Color.primary.opacity(0.6), radius: 3)
+                                            .allowsHitTesting(false)
+                                    }
+
+                                    // Zona oscurecida posterior al fin del proyecto y delimitador vertical a través de las capas
+                                    let projEndTrackX = headerWidth + CGFloat(viewModel.project.totalDuration) * CGFloat(viewModel.timelineZoom)
+                                    let tracksAreaHeight = max(geo.size.height - 27, tracksTotalHeight + 120)
+                                    let outOfBoundsTracksWidth = max(0, (effectiveLaneWidth + headerWidth) - projEndTrackX)
+
+                                    if outOfBoundsTracksWidth > 0 {
+                                        // Fondo oscurecido para zona fuera de la duración del proyecto
+                                        Rectangle()
+                                            .fill(Color.black.opacity(0.38))
+                                            .frame(width: outOfBoundsTracksWidth, height: tracksAreaHeight)
+                                            .position(x: projEndTrackX + outOfBoundsTracksWidth / 2, y: tracksAreaHeight / 2)
+                                            .allowsHitTesting(false)
+
+                                        // Línea vertical que marca el fin de la duración a través de todas las pistas
+                                        Rectangle()
+                                            .fill(Color.white.opacity(0.40))
+                                            .frame(width: 1.5, height: tracksAreaHeight)
+                                            .position(x: projEndTrackX, y: tracksAreaHeight / 2)
                                             .allowsHitTesting(false)
                                     }
 

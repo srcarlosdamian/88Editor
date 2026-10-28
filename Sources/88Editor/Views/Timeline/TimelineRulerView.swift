@@ -39,6 +39,8 @@ public struct TimelineRulerView: View {
         GeometryReader { geo in
             let totalWidth = max(geo.size.width, CGFloat(duration) * CGFloat(zoom))
             let totalSeconds = Int(ceil(Double(totalWidth) / zoom))
+            let projectEndX = CGFloat(duration) * CGFloat(zoom)
+            let outOfBoundsWidth = max(0, totalWidth - projectEndX)
 
             // Rango de renderizado / In & Out
             let hasCustomArea = workAreaIn != nil || workAreaOut != nil
@@ -52,9 +54,10 @@ public struct TimelineRulerView: View {
                 // 1. Fondo base de la regla
                 Color(NSColor.controlBackgroundColor)
 
-                // 2. Marcas de tiempo y números
+                // 2. Marcas de tiempo y números (Atenuadas si sobrepasan el fin del proyecto)
                 ForEach(0...totalSeconds, id: \.self) { second in
                     let xPos = CGFloat(second) * CGFloat(zoom)
+                    let isPastEnd = Double(second) > duration
 
                     VStack(alignment: .leading, spacing: 2) {
                         if second % 5 == 0 {
@@ -72,11 +75,47 @@ public struct TimelineRulerView: View {
                                 .frame(width: 1, height: 6)
                         }
                     }
+                    .opacity(isPastEnd ? 0.2 : 1.0)
                     .position(x: xPos, y: 12)
                     .allowsHitTesting(false)
                 }
 
-                // 3. Franja visual del Área de Trabajo (In / Out) decorativa (no intercepta clics)
+                // 3. Zona oscurecida fuera del proyecto y delimitador de FIN
+                if outOfBoundsWidth > 0 {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.42))
+                        .frame(width: outOfBoundsWidth, height: 26)
+                        .position(x: projectEndX + outOfBoundsWidth / 2, y: 13)
+                        .allowsHitTesting(false)
+
+                    // Línea vertical que marca el fin de la duración
+                    Rectangle()
+                        .fill(Color.white.opacity(0.85))
+                        .frame(width: 1.5, height: 26)
+                        .position(x: projectEndX, y: 13)
+                        .allowsHitTesting(false)
+
+                    // Etiqueta destacada de FIN DE PROYECTO
+                    HStack(spacing: 3) {
+                        Image(systemName: "flag.fill")
+                            .font(.system(size: 8))
+                        Text("FIN \(formatRulerTime(second: Int(duration)))")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color(NSColor.windowBackgroundColor))
+                    .cornerRadius(4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                    )
+                    .position(x: max(35, projectEndX - 34), y: 12)
+                    .allowsHitTesting(false)
+                }
+
+                // 4. Franja visual del Área de Trabajo (In / Out) decorativa (no intercepta clics)
                 if hasCustomArea && outX > inX {
                     ZStack(alignment: .top) {
                         Rectangle()
